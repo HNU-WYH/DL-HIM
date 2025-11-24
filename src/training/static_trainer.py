@@ -5,15 +5,15 @@ from src.neural_operator.deeponet import DeepONet1d
 
 
 class StaticTrainer:
-    def __init__(self, model: DeepONet1d, print_interval: int=100):
+    def __init__(self, model: DeepONet1d, print_interval: int = 100):
         self.model = model
         self.device = self.model.config.device
         self.epochs = self.model.config.training.num_epoch
         self.batch_size = self.model.config.training.batch_size
 
         self.alpha = self.model.config.training.loss.grad_alpha
-        self.loss_type = self.model.config.training.loss.type
-        self.loss_norm = self.model.config.training.loss.norm
+        self.loss_type = self.model.config.training.loss.type.lower()
+        self.loss_norm = self.model.config.training.loss.norm.lower()
 
         self.print_interval = print_interval
 
@@ -42,7 +42,7 @@ class StaticTrainer:
         self.model.k_mean.fill_(k_mean_val.item())
         self.model.k_sigma.fill_(k_std_val.item())
 
-        if self.model.requires_res:
+        if self.model.require_res:
             self.a_mats_train = torch.tensor(dataset["a_mats_train"], dtype=torch.float32, device=self.device)
             self.a_mats_val = torch.tensor(dataset["a_mats_val"], dtype=torch.float32, device=self.device)
         else:
@@ -55,7 +55,7 @@ class StaticTrainer:
             self.du_train, self.du_val = None, None
 
     def compute_loss(self, u_pred=None, u_true=None, du_pred=None, du_true=None, res=None, dres=None, **kwargs):
-        if self.loss_type == "Error":
+        if self.loss_type == "error":
             if self.loss_norm == "l2":
                 return torch.nn.functional.mse_loss(u_pred, u_true)
             elif self.loss_norm == "l1":
@@ -64,9 +64,9 @@ class StaticTrainer:
                 return torch.nn.functional.mse_loss(u_pred, u_true) + \
                     self.alpha * torch.nn.functional.mse_loss(du_pred, du_true)
             else:
-                raise NotImplementedError("Unknown norm type for Error loss.")
+                raise NotImplementedError("Unknown norm type for the error loss.")
 
-        elif self.loss_type == "Residual":
+        elif self.loss_type == "residual":
             if self.loss_norm == "l2":
                 return torch.mean(torch.pow(res, 2))
             elif self.loss_norm == "l1":
@@ -74,7 +74,7 @@ class StaticTrainer:
             elif self.loss_norm == "h1":
                 return torch.mean(torch.pow(res, 2)) + self.alpha * torch.mean(torch.pow(dres, 2))
             else:
-                raise NotImplementedError("Unknown norm type for Residual loss.")
+                raise NotImplementedError("Unknown norm type for the residual loss.")
         else:
             raise NotImplementedError("Unknown loss type.")
 
@@ -97,7 +97,7 @@ class StaticTrainer:
             u_batch = self.u_train[batch_idx]
 
             du_batch = self.du_train[batch_idx] if self.model.require_du else None
-            a_mats_batch = self.a_mats_train[batch_idx] if self.model.requires_res else None
+            a_mats_batch = self.a_mats_train[batch_idx] if self.model.require_res else None
 
             # 前向传播
             pred_dict = self.model(k_x=k_batch, f_x=f_batch, a_mats=a_mats_batch)
@@ -119,11 +119,11 @@ class StaticTrainer:
         self.model.eval()
 
         du_val = self.du_val if self.model.require_du else None
-        a_mats_val = self.a_mats_val if self.model.requires_res else None
+        a_mats_val = self.a_mats_val if self.model.require_res else None
 
         with torch.no_grad():
             pred_dict = self.model(k_x=self.k_val, f_x=self.f_val, a_mats=a_mats_val)
-            val_loss = self.compute_loss(u_true=self.u_val, du_true=self.du_val, **pred_dict)
+            val_loss = self.compute_loss(u_true=self.u_val, du_true=du_val, **pred_dict)
         return val_loss.item()
 
     def train(self):

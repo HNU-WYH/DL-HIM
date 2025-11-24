@@ -15,15 +15,15 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 class DataGenerator1d:
     def __init__(self, config: Box):
-        self.problem = config.problem.type.lower()
-        self.n_dim = config.problem.n_dim
-        self.solver = config.problem.method
-
-        self.dataset = None
         self.config = config
+        self.problem = config.problem.type.lower()
+        self.solver = config.problem.method.lower()
+
+        self.n_dim = config.problem.n_dim
         self.func_num = config.data.func_num
         self.split_ratio = config.data.train_ratio
 
+        self.dataset = None
         self.eps = config.data.get("eps", 1.0)
         self.x_nodes = generate_x_nodes(config.data.mesh.grid_type, config.data.mesh.grid_num)
 
@@ -154,8 +154,9 @@ class DataGenerator1d:
             f_data = f_data[None, :]
         if k_data.ndim == 1:
             k_data = k_data[None, :]
-        func_num, points_num = f_data.shape[0], f_data.shape[1]
 
+        method, problem == method.lower(), problem.lower()
+        func_num, points_num = f_data.shape[0], f_data.shape[1]
         if func_num != k_data.shape[0] or len(x_data) != points_num:
             raise ValueError("The number of parameter functions kx and rhs functions fx is not compatible")
 
@@ -183,7 +184,7 @@ class DataGenerator1d:
 
 
 class TestDataGenerator(DataGenerator1d):
-    def __init__(self, config: Box, test_num = 100):
+    def __init__(self, config: Box, test_num=100):
         super().__init__(config)
         self.func_num = test_num
         if self.problem == "helmholtz":

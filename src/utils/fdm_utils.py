@@ -35,7 +35,7 @@ def build_diffusion_matrix_1d(x, k_x, mat_type="sparse"):
     else:
         raise ValueError("k_x must be scalar, or have length len(x) or len(x)-1")
 
-    if mat_type == "sparse":
+    if mat_type.lower() == "sparse":
         Ap = sp.lil_matrix((n, n))  # (n, n)
     else:
         Ap = np.zeros(shape=(n, n), dtype=float)  # (n, n)
@@ -90,7 +90,7 @@ def build_convection_matrix_1d(x, b_x, mat_type="sparse"):
     else:
         raise ValueError("b_x must be scalar, or have length len(x)")
 
-    if mat_type == "sparse":
+    if mat_type.lower() == "sparse":
         Ap = sp.lil_matrix((n, n))
     else:
         Ap = np.zeros((n, n), dtype=float)
@@ -136,7 +136,7 @@ def build_reaction_matrix_1d(x, k_x, mat_type="sparse"):
     else:
         raise ValueError("k_x must be scalar, or have length len(x)")
 
-    if mat_type == "sparse":
+    if mat_type.lower() == "sparse":
         Ap = sp.diags(np.power(k_x, 2), offsets=0, shape=(n, n), format="lil")
     else:
         Ap = np.diag(np.power(k_x, 2))
@@ -164,6 +164,9 @@ def solve_dirichlet_system_1d(A, f, u_left=0.0, u_right=0.0, mat_type="sparse"):
     1. Apply the boundary conditions
     2. Use a direct solver to solve it
     """
+    # for robustness
+    mat_type = mat_type.lower()
+
     # apply the boundary condition
     A_ii, f_inner, inner, bc_idx = apply_dirichlet_bc_1d(A, f, u_left, u_right, mat_type)
 
@@ -183,7 +186,7 @@ def direct_solve(A, b, mat_type="sparse"):
     Returns:
         x: (N,) vector
     """
-    if mat_type == "sparse":
+    if mat_type.lower() == "sparse":
         return spla.spsolve(A, b)
     else:
         return np.linalg.solve(A, b)
@@ -217,7 +220,7 @@ def apply_dirichlet_bc_1d(A, f, u_left=0.0, u_right=0.0, mat_type="sparse"):
     A_bc = A.copy()
     u_bc = np.asarray([u_left, u_right], dtype=float)
 
-    if mat_type == "sparse":
+    if mat_type.lower() == "sparse":
         A_csr = A_bc.tocsr()
         A_ii = A_csr[inner, inner]   # matrix of inner points
         A_ib = A_csr[inner, bc_idx]  # matrix of inner points and boundary points

@@ -20,22 +20,25 @@ class NeuralOperatorBase(torch.nn.Module):
         self.output_dim = config.problem.output_dim
 
         # Required in the design of loss computation
-        self.requires_res, self.require_du, self.requires_dres = False, False, False
+        self.loss_type = config.training.loss.type.lower()
+        self.loss_norm = config.training.loss.norm.lower()
+        self.require_res, self.require_du, self.require_dres = False, False, False
+
         # whether to compute gradient of solution
-        if config.training.loss.type == "Error":
-            if config.training.loss.norm == "h1":
+        if self.loss_type == "error":
+            if self.loss_norm == "h1":
                 warn("when compute gradient, no hard constraints should be applied")
                 self.require_du = True
 
         # whether to compute residual or gradient of residual
-        elif config.training.loss.type == "Residual":
-            self.requires_res = True
-            if config.training.loss.norm == "h1":
+        elif self.loss_type == "residual":
+            self.require_res = True
+            if self.loss_norm == "h1":
                 warn("when compute gradient, no hard constraints should be applied")
-                self.requires_dres = True
+                self.require_dres, self.require_du = True, True
 
         else:
-            raise ValueError(f"Unsupported loss type: {config.training.loss.type}")
+            raise ValueError(f"Unsupported loss type: {self.loss_type}")
 
     def save_model(self, save_path=None):
         if save_path is None:

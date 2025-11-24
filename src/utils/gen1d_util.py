@@ -54,6 +54,8 @@ def generate_tanh_clustered_grid(num_points, strength=3.2):
 
 
 def generate_x_nodes(grid_type, num_points):
+    grid_type = grid_type.lower()
+
     if grid_type == 'uniform':
         return generate_uniform_grid(num_points)
     elif grid_type == 'power':
@@ -61,7 +63,7 @@ def generate_x_nodes(grid_type, num_points):
     elif grid_type == 'tanh':
         return generate_tanh_clustered_grid(num_points)
     else:
-        raise ValueError(f"Unknown Grid_type: {grid_type}")
+        raise ValueError(f"Unknown grid type: {grid_type}")
 
 
 def grf_generate(x_nodes, func_num, sigma, l0, mean=0.0, minimal=None, **kwargs):

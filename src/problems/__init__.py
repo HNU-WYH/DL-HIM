@@ -1,6 +1,6 @@
-from .diffusion1d import Diffusion1D
-from .helmholtz1d import Helmholtz1D
-from .convdiff1d import ConvectionDiffusion1D
+from src.problems.diffusion1d import Diffusion1D
+from src.problems.helmholtz1d import Helmholtz1D
+from src.problems.convdiff1d import ConvectionDiffusion1D
 
 
 # ===============================================
@@ -15,7 +15,8 @@ Problems = {
 }
 
 
-def create_problem(name):
-    if name not in Problems:
-        raise ValueError(f"Unknown problem type: {name}")
-    return Problems[name]
+def create_problem(name: str = "Poisson"):
+    problem_name = name.lower()
+    if problem_name not in Problems:
+        raise ValueError(f"Unknown problem type: {problem_name}")
+    return Problems[problem_name]

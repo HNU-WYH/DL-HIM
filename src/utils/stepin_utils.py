@@ -5,7 +5,6 @@ class AndersonAcceleration:
     """
     Anderson acceleration for u_{k+1} = G(u_k)
     """
-
     def __init__(self, m=5, reg=1e-10):
         self.m = m
         self.reg = reg
@@ -66,24 +65,25 @@ class AndersonAcceleration:
         # update the history when size > m+1
         # determine the future update direction based on (m+1) G(u)
         # namely, based on m past difference information
-        if len(self.hist_diff_u) > self.m:
+        current_m = len(self.hist_diff_f)
+        if current_m > self.m:
             self.hist_u.pop(0)
             self.hist_f.pop(0)
             self.hist_diff_u.pop(0)
             self.hist_diff_f.pop(0)
 
-        Mat_F = np.stack(self.hist_diff_f, axis=-1)      # m of [B, F]s -> [B, F, m]
-        Mat_U = np.stack(self.hist_diff_u, axis=-1)      # m of [B, F]s -> [B, F, m]
-        Mat_F_T = Mat_F.transpose(0, 2, 1)               # [B, F, m] -> [B, m, F]
+        Mat_F = np.stack(self.hist_diff_f, axis=-1)                 # m of [B, F]s -> [B, F, m]
+        Mat_U = np.stack(self.hist_diff_u, axis=-1)                 # m of [B, F]s -> [B, F, m]
+        Mat_F_T = Mat_F.transpose(0, 2, 1)                          # [B, F, m] -> [B, m, F]
 
-        H = Mat_F_T @ Mat_F + self.reg * np.eye(self.m)  # [B, m, F] @ [B, F, m] + [m, m] -> [B, m, m]
-        rhs = Mat_F_T @ f_k[..., -1]                     # [B, m, F] @ [B, F, 1] -> [B, m, 1]
+        H = Mat_F_T @ Mat_F + self.reg * np.eye(current_m)          # [B, m, F] @ [B, F, m] + [m, m] -> [B, m, m]
+        rhs = Mat_F_T @ f_k[..., None]                              # [B, m, F] @ [B, F, 1] -> [B, m, 1]
 
-        gamma = np.linalg.solve(H, rhs)                  # [B, m, 1]
+        gamma = np.linalg.solve(H, rhs)                             # [B, m, 1]
 
-        temp = (Mat_U + Mat_F) @ gamma                   # [B, F, m] @ [B, m, 1] -> [B, F, 1]
-        p_k = f_k - temp.squeeze(-1)                     # [B, F] - [B, F] -> [B, F]
-        return p_k.reshape(ori_size)                     # [B, F] -> original size
+        temp = (Mat_U + Mat_F) @ gamma                              # [B, F, m] @ [B, m, 1] -> [B, F, 1]
+        p_k = f_k - temp.squeeze(-1)                                # [B, F] - [B, F] -> [B, F]
+        return p_k.reshape(ori_size)                                # [B, F] -> original size
 
     def reset(self):
         self.hist_u = []
@@ -91,6 +91,8 @@ class AndersonAcceleration:
         self.hist_diff_u = []
         self.hist_diff_f = []
 
+    def __bool__(self):
+        return True
 
 def adaptive_step_size_cg(a_mat: np.ndarray, p_k: np.ndarray, r_k: np.ndarray, eps: float = 1e-16):
     """

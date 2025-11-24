@@ -17,12 +17,12 @@ def get_project_root():
     return project_dir
 
 
-def find_available_model(name_rule):
+def find_available_model(name_wildcard):
     """
     find the latest available model directory based on given name_rule
     (such as r'./checkpoints/Poisson_1D_*').
     """
-    model_list = glob(name_rule)
+    model_list = glob(name_wildcard)
     if not model_list:
         return None
     latest_model = max(model_list, key=os.path.getmtime)

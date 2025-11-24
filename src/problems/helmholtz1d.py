@@ -17,7 +17,7 @@ class Helmholtz1D:
         """
         self.x = np.asarray(x_nodes, dtype=float)
         self.f = np.asarray(f_x, dtype=float)
-        self.mat_type = mat_type
+        self.mat_type = mat_type.lower()
 
         if np.isscalar(k_x) or len(k_x) == 1:
             self.k = np.ones_like(x_nodes) * k_x
@@ -37,7 +37,7 @@ class Helmholtz1D:
         """
             -(-u''） + (k^2)u = f
         """
-        if method != 'fdm':
+        if method.lower() != 'fdm':
             raise NotImplementedError(f"{method} has not been implemented yet")
 
         # Apply dirichlet B.C.
@@ -54,7 +54,7 @@ class Helmholtz1D:
         """
             -(-u''） + (k^2)u = f
         """
-        if method != 'fdm':
+        if method.lower() != 'fdm':
             raise NotImplementedError(f"{method} has not been implemented yet")
 
         if (self.A_ii is not None) and (u_left == self.u_left) and (u_right == self.u_right):
