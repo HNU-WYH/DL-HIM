@@ -1,3 +1,4 @@
+from .base import NeuralOperatorBase
 from .deeponet import DeepONet1d
 from .fns import FNS1d
 from box import Box

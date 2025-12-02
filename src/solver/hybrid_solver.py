@@ -8,9 +8,8 @@ from tqdm import tqdm
 from typing import Optional
 
 from src.problems import create_problem
-from src.neural_operator import create_no
 from src.utils.gen1d_util import generate_x_nodes
-from src.neural_operator.base import NeuralOperatorBase
+from src.neural_operator import NeuralOperatorBase, create_no
 from src.utils.stepin_utils import AndersonAcceleration, adaptive_step_size_cg
 
 

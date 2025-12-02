@@ -128,7 +128,7 @@ class StaticTrainer:
 
     def train(self):
         """
-        validation losses and training losses
+        training losses and validation losses
         """
         for epoch in range(self.epochs):
             train_loss = self.train_epoch()

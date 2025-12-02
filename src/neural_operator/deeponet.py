@@ -220,10 +220,13 @@ class DeepONet1d(NeuralOperatorBase):
         return f_x - a_mats @ u_pred
 
     def _compute_jvp(self, trunk_input):
-        seed = torch.ones_like(trunk_input)  # (B,1)
-        _, jvp = torch.autograd.functional.jvp(  # each row of Jacobi is a gradient
-            lambda x: self.trunk_net(x),  # Jacobi of trunk net (B, f_dim, 1)
-            (trunk_input,),  # seed (B, 1)
-            (seed,),  # jvp: Jacobi @ seed -> (B, f_dim)
-            create_graph=True)  # create graph for backpropagation
-        return jvp  # (B, f_dim)
+        seed = torch.ones_like(trunk_input)      # seed = (B, 1)
+
+        # return the outputs and gradient of trunk_net, only jvp is required here
+        _, jvp = torch.autograd.functional.jvp(  # Each row of Jacobi is a gradient
+            func=lambda x: self.trunk_net(x),    # Jacobi of trunk net: (B, 1) -> (B, F) is a vector (B * F, B)
+            inputs=(trunk_input,),               # 由于batch之间彼此独立, Jacobi 是一个分块对角矩阵. seed = (B, 1)
+            v=(seed,),                           # jvp: Jacobi @ seed -> (B*F)
+            create_graph=True)                   # create computational graph for backpropagation
+
+        return jvp                               # jvp会自动reshape为trunk_net的outputs的shape: (B*F) -> (B, F)
