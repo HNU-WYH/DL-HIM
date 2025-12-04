@@ -152,13 +152,13 @@ class HybridSolver:
 
         # Initialize solution
         if u_init is None:
-            u_curr = np.zeros(self.prob_x_nodes - 2, dtype=np.float32)            # (new grid point - 2,)
+            u_curr = np.zeros(len(self.prob_x_nodes) - 2, dtype=np.float32)            # (new grid point - 2,)
 
         else:
             # error checking (if include boundary)
-            if len(u_init) == self.prob_x_nodes:
+            if len(u_init) == len(self.prob_x_nodes):
                 u_curr = np.asarray(u_init, dtype=np.float32)[self.inner_slice]               # (delete boundary condition)
-            elif len(u_init) == self.prob_x_nodes - 2:
+            elif len(u_init) == len(self.prob_x_nodes) - 2:
                 u_curr = np.asarray(u_init, dtype=np.float32)
             else:
                 raise ValueError("The shape of initial solution is not compatible")
