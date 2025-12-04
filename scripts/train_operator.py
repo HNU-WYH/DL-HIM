@@ -14,6 +14,7 @@ LOSS_NORM = None                  # "l1", "l2", or "h1"; None -> config default
 LOSS_TYPE = None                  # "error" or "residual"; None -> config default
 SAVE_AFTER_TRAIN = True           # whether save the trained neural operator model
 
+
 def apply_training_overrides(cfg: Box,
                              loss_type=LOSS_TYPE,
                              loss_norm = LOSS_NORM,
@@ -34,6 +35,7 @@ def apply_training_overrides(cfg: Box,
 
     return cfg
 
+
 def select_trainer(model, trainer_type: str = TRAINER_TYPE):
     """Return the proper trainer object based on the configuration."""
     trainer_type = trainer_type.lower()
@@ -46,12 +48,14 @@ def select_trainer(model, trainer_type: str = TRAINER_TYPE):
 
     raise ValueError(f"Trainer type {trainer_type} not supported")
 
+
 def ckpt_dir(cfg: Box):
     problem_name, trainer_type = cfg.problem.type.lower(), cfg.training.mode.lower()
     loss_type, loss_norm = cfg.training.loss.type.lower(), cfg.training.loss.norm.lower()
 
     ckpt_base = f"./checkpoints/{problem_name}/{trainer_type}_{loss_type}_{loss_norm}"
     return ckpt_base
+
 
 def train_operator(config_wildcard=CONFIG_WILDCARD,
                    loss_type=LOSS_TYPE,
@@ -93,6 +97,7 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
         # print the saving information
         print(f"Model and Loss saved to {os.path.dirname(cfg.model_save_path)}")
 
+
 def batch_train(trainer_types=("dynamic", "static"),
                 loss_types=("error", "residual"),
                 loss_norms=("l1", "l2", "h1"),
@@ -104,8 +109,6 @@ def batch_train(trainer_types=("dynamic", "static"),
     Checkpoints will be saved under:
     ./checkpoints/{problem_name}/{trainer_type}_{loss_type}_{loss_norm}/
     """
-
-
     for trainer_type in trainer_types:
         for loss_type in loss_types:
             for loss_norm in loss_norms:
