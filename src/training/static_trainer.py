@@ -1,11 +1,11 @@
 import torch
 import numpy as np
 
-from src.neural_operator.deeponet import DeepONet1d
+from src.neural_operator import NeuralOperatorBase
 
 
 class StaticTrainer:
-    def __init__(self, model: DeepONet1d, print_interval: int = 100):
+    def __init__(self, model: NeuralOperatorBase, print_interval: int = 100):
         self.model = model
         self.device = self.model.config.device
         self.epochs = self.model.config.training.num_epoch

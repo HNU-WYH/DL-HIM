@@ -111,7 +111,10 @@ class DynamicTrainer:
 
         for step in range(total_steps):
             #TODO: this is a problem that might leading to mismatch
-            if (step+1) % self.update_ratio == 0:
+            # If same as the inference: Jacobi first and then Neural Operator
+            # NO are trained on smoothed dataset, which lead to mismatch
+            # as the smoothing effects varies much between coarse grid (training) and fine grid (inference)
+            if step % self.update_ratio == 0:
                 pred_dict = self.model(k_x=k_batch, f_x=r_batch, a_mats=A_batch)
                 delta_u = pred_dict["u_pred"]
             else:
@@ -196,27 +199,27 @@ class DynamicTrainer:
         return torch.mean(loss)
 
     def train_epoch(self):
-        #TODO
-        self.k_train.shape[0]
+        #TODO: 把是否当场生成rhs data做成一个选项放在config里面
+        # 如果选择当场生成, 再使用不同的逻辑
+        # 我现在这个逻辑是针对于static dataset的
+        epoch_loss = 0.0
+        data_size = self.u_train.shape[0]
         perm = np.random.permutation(data_size)
 
-        for i in range(0, len(perm), self.batch_size):
+        for i in range(0, data_size, self.batch_size):
             end_idx = min(i + self.batch_size, data_size)
             batch_idx = perm[i:end_idx]
 
+            f_batch = self.f_train[batch_idx]
             k_batch = self.k_train[batch_idx]
             A_batch = self.a_mats_train[batch_idx]
 
-            f_batch = torch.randn((k_batch.size(0), k_batch.size(1) - 2), device=self.device)
-            u_true, du_true = self._compute_true_solution(A_batch, f_batch)
+            u_true = self.u_train[batch_idx]
+            du_true = self.du_train[batch_idx]
 
-            u_seq, res_seq = self._hybrid_rollout(A_batch, f_batch, k_batch, self.current_horizon)
-            du_seq = self._compute_du(u_seq) if self.loss_norm == "h1" else None
-            dres_seq = [-A_batch @ du for du in du_seq] if (
-                        self.loss_type == "residual" and self.loss_norm == "h1") else None
-
-            loss = self.compute_loss(u_seq=u_seq, res_seq=res_seq, du_seq=du_seq, dres_seq=dres_seq,
-                                     u_true=u_true, du_true=du_true)
+            u_seq, res_seq = self._hybrid_rollout(A_batch=A_batch, f_batch=f_batch, k_batch=k_batch,
+                                                  u_curr=None, horizon=self.current_horizon)
+            loss = self.compute_loss(u_seq=u_seq, res_seq=res_seq, u_true=u_true, du_true=du_true)
 
             self.optimizer.zero_grad()
             loss.backward()
@@ -228,20 +231,23 @@ class DynamicTrainer:
 
     def val_epoch(self):
         self.model.eval()
+        #TODO: 这个逻辑有一点奇怪, 没法跟static保持一致
+        # 对于dynamic而言, 我们用autograd算出来的 du, 是对于输入给NO的residual对应的correction e_i的梯度
+        # 这个梯度和外界solver的梯度不是完全一致的. d( u_i + e_i - u^\star)
+        # 我们不能用autograd算梯度, 或者至少应该做一下处理, 比如 de_i (autograd) + du_i(previous step) - du_val 才合理
+        # 在这个程序实现里, 我们使用了中心差分来算grad, 所以我们的对于require_du, require_res, require_dres的判断标准发生了很大的改变
+        # 至少我们算dres不需要a_mats了. 直接用res中心差分算就完了
 
-        # 这个逻辑绝对不对, 对于dynamic而言, 我的可以直接算出来d_res, 不需要du
-        # TODO 建议不要把model.require_du之类的放在model里面, 应该作为一个变量放在forward里面,
-        #  TODO trainer根据需要确定require_du的大小之类的
-        du_val = self.du_val if self.model.require_du else None
-        A_val = self.a_mats_val
+        #TODO: 由于上面的问题, 我认为不要把model.require_du之类的放在model里面
+        # 应该在trainer里面自己来判断需要load哪种data, 以及怎么样train
+        # 对于NO, 那么则是设置bool 变量, 你要告诉no, 我到底需不需要你autograd出来的du和dres
+        # 而不是根据require_du, require_dres什么的来判断, 我认为这个逻辑需要放在trainer里面
+        # 同理static trainer也需要更改,来保持统一
 
+        # 对于validation而言, 我们就不做dynamic 展开了, 直接预测
         with torch.no_grad():
-            u_seq, res_seq = self._hybrid_rollout(A_val, self.f_val, self.k_val, self.current_horizon)
-            du_seq = self._compute_du(u_seq) if self.loss_norm == "h1" else None
-            dres_seq = [-A_val @ du for du in du_seq] if (self.loss_type == "residual" and self.loss_norm == "h1") else None
-
-            val_loss = self.compute_loss(u_seq=u_seq, res_seq=res_seq, du_seq=du_seq, dres_seq=dres_seq,
-                                         u_true=self.u_val, du_true=du_val)
+            pred_dict = self.model(k_x=self.k_val, f_x=self.f_val, a_mats=self.a_mats_val)
+            val_loss = torch.nn.functional.mse_loss(pred_dict["u_pred"], self.u_val)
         return val_loss.item()
 
     def _update_curriculum(self, epoch: int):
