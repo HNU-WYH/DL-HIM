@@ -126,7 +126,7 @@ class DeepONet1d(NeuralOperatorBase):
             # Warning: "If a hard constraint is applied, the gradient is: du = du_pred * H + u_pred * dH"
 
             if self.require_dres and a_mats is not None:
-                dres = -a_mats @ du_pred  # (B, num_x-2, num_x-2) @ (B, num_x-2)
+                dres = (-a_mats @ du_pred[..., None]).squeeze(-1)  # (B, num_x-2, num_x-2) @ (B, num_x-2)
 
         return {
             "u_pred": u_pred,

@@ -1,8 +1,10 @@
 import torch
+import warnings
 import numpy as np
 
+from torch import vmap
 from typing import Optional
-from functorch import vmap
+# from functorch import vmap
 
 from src.neural_operator import NeuralOperatorBase
 
@@ -14,7 +16,7 @@ class DynamicTrainer:
         self.device = self.model.device
 
         # # the a_mats and residual computing are required in the dynamic setting
-        # self.model.require_res = True
+        self.model.require_res = self.model.require_du = self.model.require_dres = False
 
         # training hyperparameters
         self.epochs = self.model.config.training.num_epoch
@@ -72,11 +74,8 @@ class DynamicTrainer:
         self.model.k_mean.fill_(k_mean_val.item())
         self.model.k_sigma.fill_(k_std_val.item())
 
-        if self.model.require_du:
-            self.du_val = torch.tensor(dataset["du_data_val"], dtype=torch.float32, device=self.device)
-            self.du_train = torch.tensor(dataset["du_data_train"], dtype=torch.float32, device=self.device)
-        else:
-            self.du_train, self.du_val = None, None
+        self.du_val = torch.tensor(dataset["du_data_val"], dtype=torch.float32, device=self.device)
+        self.du_train = torch.tensor(dataset["du_data_train"], dtype=torch.float32, device=self.device)
 
     @staticmethod
     def _residual_compute(A_batch:torch.Tensor, f_batch:torch.Tensor, u_batch:torch.Tensor):
@@ -131,8 +130,7 @@ class DynamicTrainer:
             if len(u_seq) >= horizon:
                 break
 
-        return (torch.as_tensor(u_seq, dtype=torch.float32, device=self.device),
-                torch.as_tensor(res_seq, dtype=torch.float32, device=self.device))
+        return torch.stack(u_seq),torch.stack(res_seq)
 
     def _compute_du(self, batch_func: torch.Tensor, x_nodes: Optional[torch.Tensor] = None):
         """
@@ -153,7 +151,7 @@ class DynamicTrainer:
             return:
                 grad: [N-2,]
             """
-            grad_tuple = torch.gradient(input=single_func, spacing=(x_data,), dim=0)
+            grad_tuple = torch.gradient(input=single_func, spacing=(x_data,), dim=1)
             return grad_tuple[0]
 
         batch_gradient = vmap(gradient_compute, in_dims=(0, None))
@@ -172,6 +170,9 @@ class DynamicTrainer:
             loss: scalar
         """
         if self.loss_type == "error":
+
+            warnings.filterwarnings("ignore", message="Using a target size *")
+
             if self.loss_norm == "l2":
                 loss = torch.nn.functional.mse_loss(u_seq, u_true)
             elif self.loss_norm == "l1":
