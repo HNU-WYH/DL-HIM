@@ -61,7 +61,7 @@ training:
   weight_decay: !!float 1e-8        # weight decay
 
   loss:
-    type: Error                     # the type of loss function (Residual, Error)
+    type: Residual                     # the type of loss function (Residual, Error)
     norm: l2                        # norm type ("l1“, "l2", "h1")
     grad_alpha: 0.1                 # weight for gradient term
 

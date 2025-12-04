@@ -217,7 +217,7 @@ class DeepONet1d(NeuralOperatorBase):
 
     @staticmethod
     def compute_residual(a_mats, f_x, u_pred):
-        return f_x - a_mats @ u_pred
+        return (f_x[..., None] - a_mats @ u_pred[..., None]).squeeze(-1)
 
     def _compute_jvp(self, trunk_input):
         seed = torch.ones_like(trunk_input)      # seed = (B, 1)

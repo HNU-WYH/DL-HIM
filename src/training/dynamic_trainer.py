@@ -6,6 +6,7 @@ from functorch import vmap
 
 from src.neural_operator import NeuralOperatorBase
 
+
 class DynamicTrainer:
     def __init__(self, model: NeuralOperatorBase, print_interval: int = 1000):
         # Initialization
