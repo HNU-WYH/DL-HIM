@@ -121,7 +121,7 @@ class HybridSolver:
                                      query_points=self.prob_x_nodes[self.inner_slice])
 
         if self.neural_update_type == "cg":
-            alpha = adaptive_step_size_cg(self.A_mat, delta_u, residual)
+            alpha = adaptive_step_size_cg(self.A_inner, delta_u, residual)
         else:
             alpha = 1.0
 
