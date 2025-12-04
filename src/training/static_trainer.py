@@ -117,13 +117,9 @@ class StaticTrainer:
         average validation loss
         """
         self.model.eval()
-
-        du_val = self.du_val if self.model.require_du else None
-        a_mats_val = self.a_mats_val if self.model.require_res else None
-
         with torch.no_grad():
-            pred_dict = self.model(k_x=self.k_val, f_x=self.f_val, a_mats=a_mats_val)
-            val_loss = self.compute_loss(u_true=self.u_val, du_true=du_val, **pred_dict)
+            pred_dict = self.model(k_x=self.k_val, f_x=self.f_val, a_mats=self.a_mats_val)
+            val_loss = torch.nn.functional.mse_loss(pred_dict["u_pred"], self.u_val)
         return val_loss.item()
 
     def train(self):

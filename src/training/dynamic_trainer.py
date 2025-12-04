@@ -202,6 +202,8 @@ class DynamicTrainer:
         #TODO: 把是否当场生成rhs data做成一个选项放在config里面
         # 如果选择当场生成, 再使用不同的逻辑
         # 我现在这个逻辑是针对于static dataset的
+        self.model.train()
+
         epoch_loss = 0.0
         data_size = self.u_train.shape[0]
         perm = np.random.permutation(data_size)
@@ -230,7 +232,6 @@ class DynamicTrainer:
         return epoch_loss / data_size
 
     def val_epoch(self):
-        self.model.eval()
         #TODO: 这个逻辑有一点奇怪, 没法跟static保持一致
         # 对于dynamic而言, 我们用autograd算出来的 du, 是对于输入给NO的residual对应的correction e_i的梯度
         # 这个梯度和外界solver的梯度不是完全一致的. d( u_i + e_i - u^\star)
@@ -245,6 +246,7 @@ class DynamicTrainer:
         # 同理static trainer也需要更改,来保持统一
 
         # 对于validation而言, 我们就不做dynamic 展开了, 直接预测
+        self.model.eval()
         with torch.no_grad():
             pred_dict = self.model(k_x=self.k_val, f_x=self.f_val, a_mats=self.a_mats_val)
             val_loss = torch.nn.functional.mse_loss(pred_dict["u_pred"], self.u_val)
