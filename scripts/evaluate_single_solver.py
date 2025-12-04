@@ -4,6 +4,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 from tqdm import tqdm
 
+from neural_operator import NeuralOperatorBase
 from src.solver.hybrid_solver import HybridSolver
 from src.utils.cfg_util import load_config
 
@@ -12,11 +13,6 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate a single solver mode")
     parser.add_argument(
         "--config", default="diffusion1d*", help="Wildcard for the config file name."
-    )
-    parser.add_argument(
-        "--dataset",
-        default=None,
-        help="Optional path to the dataset (.npz). Overrides the path in the config.",
     )
     parser.add_argument(
         "--mode",
@@ -35,7 +31,7 @@ def parse_args() -> argparse.Namespace:
         help="Override the neural operator checkpoint path.",
     )
     parser.add_argument(
-        "--step-method",
+        "--smoother",
         default=None,
         choices=["jacobi", "gauss-seidel", "gauss_seidel", "gs", "g-s"],
         help="Override the numerical smoother used in the solver.",
@@ -61,21 +57,9 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Residual tolerance for convergence.",
     )
-    parser.add_argument(
-        "--aa-m",
-        type=int,
-        default=None,
-        help="Anderson acceleration history size (used when neural-update is 'aa').",
-    )
-    parser.add_argument(
-        "--num-samples",
-        type=int,
-        default=None,
-        help="Number of validation samples to evaluate. Defaults to the entire split.",
-    )
     return parser.parse_args()
 
-
+#TODO 这是我在hybridsolver里面的失误, 本来这个架构是可以完全舍弃掉边界值的, 但是这里又加上了
 def pad_rhs(f_inner: np.ndarray) -> np.ndarray:
     """Pad inner RHS values with zero Dirichlet boundaries to full length."""
     f_full = np.zeros(len(f_inner) + 2, dtype=np.float32)
@@ -83,31 +67,19 @@ def pad_rhs(f_inner: np.ndarray) -> np.ndarray:
     return f_full
 
 
-def build_solver(
-    cfg,
-    k_x: np.ndarray,
-    f_inner: np.ndarray,
-    x_nodes: np.ndarray,
-    model_path: str = None,
-) -> HybridSolver:
+def build_solver(cfg, k_x: np.ndarray, f_inner: np.ndarray, x_nodes: np.ndarray,
+                 model: NeuralOperatorBase, model_path: str = None) -> HybridSolver:
+    """Return the hybrid solver to solve k_x and f_x"""
     f_full = pad_rhs(f_inner)
-    return HybridSolver(
-        cfg,
-        k_x=k_x,
-        f_x=f_full,
-        eps=cfg.data.get("eps", 1.0),
-        prob_x_nodes=x_nodes,
-        cp_path=model_path,
-    )
+    return HybridSolver(cfg, k_x=k_x, f_x=f_full, prob_x_nodes=x_nodes, model=model, cp_path=model_path)
 
 
-def evaluate_mode(
-    cfg,
-    mode: str,
-    dataset: Dict[str, np.ndarray],
-    x_nodes: np.ndarray,
-    model_path: str,
-    max_iter: int = None,
+def evaluate_mode(cfg,
+                  mode: str,
+                  dataset: Dict[str, np.ndarray],
+                  x_nodes: np.ndarray,
+                  model_path: str,
+                  max_iter: int = None,
     tol: float = None,
     aa_m: int = None,
     limit: int = None,
@@ -135,7 +107,6 @@ def evaluate_mode(
 
 def main():
     args = parse_args()
-
     cfg = load_config(args.config)
     if args.dataset:
         cfg["dataset_path"] = args.dataset
