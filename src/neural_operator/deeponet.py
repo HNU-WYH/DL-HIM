@@ -165,6 +165,8 @@ class DeepONet1d(NeuralOperatorBase):
         # If query_points is None, use the internal x_nodes for predictions
         if query_points is None:
             query_points = x_f
+        if query_points.ndim == 1:
+            query_points = query_points[:, None]
         query_points = torch.as_tensor(query_points, dtype=torch.float32, device=self.device)  # (G-2, 1)
 
         with torch.no_grad():

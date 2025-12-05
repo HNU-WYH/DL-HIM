@@ -1,172 +1,298 @@
-import argparse
-from typing import Dict, List, Tuple
+import os
 
+from torchgen.executorch.api.et_cpp import return_type
+
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
+import copy
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+
+import matplotlib.pyplot as plt
 import numpy as np
+from box import Box
 from tqdm import tqdm
 
-from neural_operator import NeuralOperatorBase
 from src.solver.hybrid_solver import HybridSolver
+from src.utils.fdm_utils import expand_solution
 from src.utils.cfg_util import load_config
 
+# Pre-registered config for unresolved problem and testing data
+CONFIG_WILDCARD = "diffusion1d*"          # config filename wildcard
+DATASET_PATH: Optional[str] = None         # path to .npz dataset; None -> config default
+TEST_GRID_NUM = 81
+SAMPLE_INDICES: Sequence[int] = list(range(0, 201, 10))  # validation indices to evaluate
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate a single solver mode")
-    parser.add_argument(
-        "--config", default="diffusion1d*", help="Wildcard for the config file name."
+# Pre-registered model checkpoints (use the keys inside CASES)
+# If Default is None, will raise an error
+MODEL_PATHS: Dict[str, Optional[str]] = {"Default": "checkpoints/diffusion1d/dynamic_residual_h1/diffusion_1D_Grid31_Ep20000_2025-12-05"}
+
+# Evaluation plan: each dict describes one curve on the plot
+CASES: List[Dict] = [
+    {"label": "Pure-DeepONet", "mode": "neural",    "model": "Default", "one_shot": True},
+
+    # {"label": "Gauss-Seidel",  "mode": "numerical", "model": None,  "numerical_method": "gauss-seidel"},
+    {"label": "Jacobi",        "mode": "numerical", "model": None,      "numerical_method": "jacobi"},
+
+    {"label": "Jacobi-AA",     "mode": "numerical", "model": None,      "numerical_method": "jacobi", "neural_update": "aa", "aa_m": 15},
+
+    {"label": "Hybrid-fixed",  "mode": "hybrid",    "model": "Default", "numerical_method": "jacobi", "hybrid_ratio": 20, "neural_update": "fixed"},
+
+    {"label": "Hybrid-AA",     "mode": "hybrid",    "model": "Default", "numerical_method": "jacobi", "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 15},
+
+    {"label": "Hybrid-CG",     "mode": "hybrid",    "model": "Default", "numerical_method": "jacobi", "hybrid_ratio": 20, "neural_update": "cg"},
+]
+
+# Iteration / tolerance overrides applied to every case unless the case itself
+# provides its own values otherwise using the value in the yaml file
+MAX_ITER: Optional[int] = None
+TOL: Optional[float] = None
+
+
+# =====================
+# Helper functions
+# =====================
+def select_test_sample(grid_num, dataset, test_sample_indices: List[int] = None):
+    if not isinstance(test_sample_indices, list):
+        return_list = False
+        test_sample_indices = [test_sample_indices]
+    else:
+        return_list = True
+
+    x_before = dataset["x_data"]
+    k = dataset["k_data_val"][test_sample_indices]
+    f = dataset["f_data_val"][test_sample_indices]
+    u = dataset["u_data_val"][test_sample_indices]
+
+    u_init = np.zeros(grid_num)
+    x_after = np.linspace(0,1, grid_num)
+
+    if len(x_before) != len(x_after):
+        k = [np.interp(x_after, x_before, k[i]) for i in range(k.shape[0])]
+        f = [np.interp(x_after[1:-1], x_before[1:-1], f[i]) for i in range(f.shape[0])]
+        u = [np.interp(x_after[1:-1], x_before[1:-1], u[i]) for i in range(u.shape[0])]
+
+    if return_list:
+        return np.array(k), np.array(f), x_after, np.array(u)
+    else:
+        return k[0], f[0], x_after, u[0]
+
+def resolve_model_path(model_key: Optional[str]) -> Optional[str]:
+    if model_key is None:
+        return None
+    if model_key not in MODEL_PATHS:
+        raise KeyError(f"Model '{model_key}' not registered in MODEL_PATHS")
+    return MODEL_PATHS[model_key]
+
+def apply_global_overrides(cfg: Box) -> Box:
+    cfg = copy.deepcopy(cfg)
+    if DATASET_PATH:
+        cfg["dataset_path"] = DATASET_PATH
+    return cfg
+
+def apply_case_overrides(base_cfg: Box, case: Dict,
+                         tol = TOL, max_iter = MAX_ITER) -> Box:
+    cfg = copy.deepcopy(base_cfg)
+
+    # Ensure hybrid initialization for neural runs
+    cfg.solver.type = case.get("mode", cfg.solver.get("type", "hybrid")).lower()
+
+    # override the tol and max_iter
+    if tol is not None:
+        cfg.problem.tolerance = tol
+    if max_iter is not None:
+        cfg.problem.max_iter = max_iter
+
+    numerical_method = case.get("numerical_method")
+    if numerical_method is not None:
+        cfg.solver.numerical["method"] = numerical_method
+
+    hybrid_ratio = case.get("hybrid_ratio")
+    if hybrid_ratio is not None:
+        cfg.solver.hybrid["update_ratio"] = hybrid_ratio
+
+    neural_update = case.get("neural_update")
+    if neural_update is not None:
+        cfg.solver.hybrid["neural_update"] = neural_update
+
+    aa_m = case.get("aa_m")
+    if aa_m is not None:
+        cfg.solver.hybrid["aa_m"] = aa_m
+
+    model_path = resolve_model_path(case.get("model"))
+    if model_path is not None:
+        cfg["model_load_path"] = model_path
+
+    return cfg
+
+
+def pad_series(values: List[float], target_len: int) -> np.ndarray:
+    """pad the history of residual or error"""
+    if not values:
+        return np.zeros(target_len)
+    if len(values) >= target_len:
+        return np.asarray(values[:target_len], dtype=np.float32)
+    pad_val = values[-1]
+    padded = np.full(target_len, pad_val, dtype=np.float32)
+    padded[: len(values)] = values
+    return padded
+
+
+#TODO: 这里改为直接用cfg会不会更好? 每一次迭代都用override的cfg来工作
+#TODO: 这里我一会儿又要expand,一会儿又不要,这里也要改
+#TODO: 最好加一个专门用于test的dataset
+def collect_history(solver: HybridSolver,
+                    u_ref_inner: np.ndarray,
+                    max_iter: int, tol: float,
+                    mode: str, one_shot: bool = False,
+                    aa_m: Optional[int] = None,
+                    ) -> Tuple[np.ndarray, np.ndarray]:
+    mode = mode.lower()
+    u_curr = np.zeros_like(u_ref_inner, dtype=np.float32)
+
+    if one_shot:
+        u_pred = solver._neural_step(u_curr)
+        residual = solver.compute_residual(u_pred)
+        res_norm = float(np.linalg.norm(residual, ord=2))
+        err_norm = float(np.linalg.norm(u_pred - u_ref_inner, ord=2) / np.linalg.norm(u_ref_inner, ord=2))
+        return np.full(max_iter, res_norm, dtype=np.float32) , np.full(max_iter, err_norm, dtype=np.float32),
+
+    # Initialize Anderson Acceleration if requested
+    aa = None
+    if solver.neural_update_type == "aa":
+        from src.utils.stepin_utils import AndersonAcceleration
+
+        history_size = aa_m or solver.config.solver.hybrid.get("aa_m", 0)
+        aa = AndersonAcceleration(m=history_size) if history_size else None
+
+    errors: List[float] = []
+    residuals: List[float] = []
+
+    for iter_idx in range(max_iter):
+        numerical_update = (iter_idx + 1) % solver.hybrid_ratio
+
+        if mode == "numerical":
+            u_next = solver._numerical_step(u_curr)
+            if aa:
+                u_next = u_curr + aa.compute(u_curr, u_next)
+        elif mode == "deeponet":
+            u_next = solver._neural_step(u_curr)
+            if aa:
+                u_next = u_curr + aa.compute(u_curr, u_next)
+        elif mode == "hybrid":
+            if numerical_update:
+                u_next = solver._numerical_step(u_curr)
+            else:
+                u_next = solver._neural_step(u_curr)
+                if aa:
+                    u_next = u_curr + aa.compute(u_curr, u_next)
+        else:
+            raise ValueError(f"Unknown mode: {mode}")
+
+        res_vec = solver.compute_residual(u_next)
+        res_norm = float(np.linalg.norm(res_vec, ord=2))
+        err_norm = float(np.linalg.norm(u_next - u_ref_inner, ord=2)/ np.linalg.norm(u_ref_inner, ord=2))
+
+        residuals.append(res_norm)
+        errors.append(err_norm)
+        u_curr = u_next
+
+        if res_norm < tol:
+            break
+
+    return pad_series(residuals, max_iter) , pad_series(errors, max_iter),
+
+
+def evaluate_case_on_sample(
+    base_cfg: Box,
+    case: Dict,
+    k_x: np.ndarray,
+    f_inner: np.ndarray,
+    u_gt_inner: np.ndarray,
+    x_nodes: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    cfg = apply_case_overrides(base_cfg, case)
+
+    max_iter = case.get("max_iter") or MAX_ITER or cfg.problem.get("iteration", 200)
+    tol = case.get("tol") or TOL or cfg.problem.get("tolerance", 1e-10)
+
+    solver = HybridSolver(
+        cfg,
+        k_x=k_x,
+        f_x=expand_solution(f_inner),
+        eps=cfg.data.get("eps", 1.0),
+        prob_x_nodes=x_nodes,
+        cp_path=cfg.get("model_load_path"),
     )
-    parser.add_argument(
-        "--mode",
-        default=None,
-        choices=["numerical", "deeponet", "hybrid"],
-        help="Solver mode to evaluate. Defaults to the value in the config.",
+
+    err_hist, res_hist = collect_history(
+        solver,
+        u_gt_inner,
+        mode=case.get("mode", "hybrid"),
+        max_iter=max_iter,
+        tol=tol,
+        one_shot=case.get("one_shot", False),
+        aa_m=case.get("aa_m"),
     )
-    parser.add_argument(
-        "--operator-type",
-        default=None,
-        help="Override the operator type (e.g., DeepONet, FNS).",
-    )
-    parser.add_argument(
-        "--model-path",
-        default=None,
-        help="Override the neural operator checkpoint path.",
-    )
-    parser.add_argument(
-        "--smoother",
-        default=None,
-        choices=["jacobi", "gauss-seidel", "gauss_seidel", "gs", "g-s"],
-        help="Override the numerical smoother used in the solver.",
-    )
-    parser.add_argument(
-        "--hybrid-ratio",
-        type=int,
-        default=None,
-        help="Override the ratio of numerical to neural updates in hybrid mode.",
-    )
-    parser.add_argument(
-        "--neural-update",
-        default=None,
-        choices=["fixed", "cg", "aa"],
-        help="Override the neural update strategy.",
-    )
-    parser.add_argument(
-        "--max-iter", type=int, default=None, help="Maximum iterations for the solver."
-    )
-    parser.add_argument(
-        "--tol",
-        type=float,
-        default=None,
-        help="Residual tolerance for convergence.",
-    )
-    return parser.parse_args()
-
-#TODO 这是我在hybridsolver里面的失误, 本来这个架构是可以完全舍弃掉边界值的, 但是这里又加上了
-def pad_rhs(f_inner: np.ndarray) -> np.ndarray:
-    """Pad inner RHS values with zero Dirichlet boundaries to full length."""
-    f_full = np.zeros(len(f_inner) + 2, dtype=np.float32)
-    f_full[1:-1] = f_inner
-    return f_full
+    return err_hist, res_hist
 
 
-def build_solver(cfg, k_x: np.ndarray, f_inner: np.ndarray, x_nodes: np.ndarray,
-                 model: NeuralOperatorBase, model_path: str = None) -> HybridSolver:
-    """Return the hybrid solver to solve k_x and f_x"""
-    f_full = pad_rhs(f_inner)
-    return HybridSolver(cfg, k_x=k_x, f_x=f_full, prob_x_nodes=x_nodes, model=model, cp_path=model_path)
+def average_histories(histories: Iterable[np.ndarray]) -> np.ndarray:
+    stacked = np.stack(list(histories), axis=0)
+    return stacked.mean(axis=0)
 
 
-def evaluate_mode(cfg,
-                  mode: str,
-                  dataset: Dict[str, np.ndarray],
-                  x_nodes: np.ndarray,
-                  model_path: str,
-                  max_iter: int = None,
-    tol: float = None,
-    aa_m: int = None,
-    limit: int = None,
-) -> Tuple[List[float], List[float]]:
-    errors, residuals = [], []
-    u_gt = dataset["u_data_val"]
-    k_batch = dataset["k_data_val"]
-    f_batch = dataset["f_data_val"]
-
-    total = len(u_gt) if limit is None else min(limit, len(u_gt))
-    for idx in tqdm(range(total), desc=f"Evaluating ({mode})"):
-        solver = build_solver(cfg, k_batch[idx], f_batch[idx], x_nodes, model_path)
-        u_pred, history = solver.solve(
-            max_iter=max_iter,
-            tol=tol,
-            aa_m=aa_m,
-            mode=mode,
-        )
-        err = np.linalg.norm(u_pred - u_gt[idx], ord=2) / np.linalg.norm(u_gt[idx], ord=2)
-        errors.append(err)
-        if history["residual_norm"]:
-            residuals.append(history["residual_norm"][-1])
-    return errors, residuals
-
-
-def main():
-    args = parse_args()
-    cfg = load_config(args.config)
-    if args.dataset:
-        cfg["dataset_path"] = args.dataset
-    if args.operator_type:
-        cfg.training.operator_type = args.operator_type
-    if args.step_method:
-        cfg.solver.numerical["method"] = args.step_method
-    if args.hybrid_ratio:
-        cfg.solver.hybrid["update_ratio"] = args.hybrid_ratio
-    if args.neural_update:
-        cfg.solver.hybrid["neural_update"] = args.neural_update
-    if args.mode:
-        cfg.solver["type"] = args.mode
-    if args.model_path:
-        cfg["model_load_path"] = args.model_path
-
+def run_evaluation():
+    cfg = apply_global_overrides(load_config(CONFIG_WILDCARD))
     data = np.load(cfg["dataset_path"])
-    x_nodes = data["x_data"]
 
-    target_mode = cfg.solver.get("type", "numerical").lower()
-    selected_modes = {"target": target_mode, "baseline": "numerical"}
+    k_val, f_val, x_val, u_val = select_test_sample(TEST_GRID_NUM, data, SAMPLE_INDICES)
 
-    print("\nEvaluation settings:")
-    print(f"  Mode: {target_mode}")
-    print(f"  Operator: {cfg.training.operator_type}")
-    print(f"  Model path: {cfg['model_load_path'] if args.model_path else 'from config'}")
-    print(f"  Dataset: {cfg['dataset_path']}")
+    case_results = {case["label"]: {"errors": [], "residuals": [], "iters": None} for case in CASES}
 
-    aa_m = args.aa_m or cfg.solver.hybrid.get("aa_m", None)
-    max_iter = args.max_iter or cfg.problem.get("iteration", None)
-    tol = args.tol or cfg.problem.get("tolerance", None)
+    for sample_idx, _ in enumerate(tqdm(SAMPLE_INDICES, desc="Samples")):
+        for case in CASES:
+            err_hist, res_hist = evaluate_case_on_sample(
+                cfg,
+                case,
+                k_val[sample_idx],
+                f_val[sample_idx],
+                u_val[sample_idx],
+                x_val,
+            )
 
-    results = {}
-    for label, mode in selected_modes.items():
-        errs, res = evaluate_mode(
-            cfg,
-            mode,
-            data,
-            x_nodes,
-            cfg.get("model_load_path"),
-            max_iter=max_iter,
-            tol=tol,
-            aa_m=aa_m,
-            limit=args.num_samples,
-        )
-        results[label] = {
-            "mean_error": float(np.mean(errs)) if errs else float("nan"),
-            "std_error": float(np.std(errs)) if errs else float("nan"),
-            "mean_residual": float(np.mean(res)) if res else float("nan"),
-            "sample_size": len(errs),
-        }
+            case_results[case["label"]]["errors"].append(err_hist)
+            case_results[case["label"]]["residuals"].append(res_hist)
+            case_results[case["label"]]["iters"] = np.arange(1, len(err_hist) + 1)
 
-    print("\nSummary (relative L2 error):")
-    for label, stats in results.items():
-        print(
-            f"  {label.title():<10} | samples: {stats['sample_size']:<4d} "
-            f"| mean: {stats['mean_error']:.4e} | std: {stats['std_error']:.4e} "
-            f"| final residual: {stats['mean_residual']:.4e}"
-        )
+    avg_results = {}
+    for label, store in case_results.items():
+        avg_err = average_histories(store["errors"])
+        avg_res = average_histories(store["residuals"])
+        avg_results[label] = {"iter": store["iters"], "error": avg_err, "residual": avg_res}
+
+    # Plotting
+    plt.figure(figsize=(12, 5))
+    plt.subplot(1, 2, 1)
+    for label, vals in avg_results.items():
+        plt.semilogy(vals["iter"], vals["error"], label=label)
+    plt.title("Average Relative Error vs Iteration")
+    plt.xlabel("Iteration")
+    plt.ylabel("Relative L2 Error")
+    plt.grid(True)
+    plt.legend()
+
+    plt.subplot(1, 2, 2)
+    for label, vals in avg_results.items():
+        plt.semilogy(vals["iter"], vals["residual"], label=label)
+    plt.title("Average Residual vs Iteration")
+    plt.xlabel("Iteration")
+    plt.ylabel("Residual (L-inf)")
+    plt.grid(True)
+    plt.legend()
+
+    plt.tight_layout()
+    plt.show()
 
 
 if __name__ == "__main__":
-    main()
+    run_evaluation()

@@ -71,6 +71,7 @@ class AndersonAcceleration:
             self.hist_f.pop(0)
             self.hist_diff_u.pop(0)
             self.hist_diff_f.pop(0)
+            current_m = current_m - 1
 
         Mat_F = np.stack(self.hist_diff_f, axis=-1)                 # m of [B, F]s -> [B, F, m]
         Mat_U = np.stack(self.hist_diff_u, axis=-1)                 # m of [B, F]s -> [B, F, m]

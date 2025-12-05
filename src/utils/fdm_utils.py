@@ -242,4 +242,3 @@ def expand_solution(u_inner, u_left=0.0, u_right=0.0):
     u_expand[0], u_expand[-1] = u_left, u_right
     return u_expand
 
-
