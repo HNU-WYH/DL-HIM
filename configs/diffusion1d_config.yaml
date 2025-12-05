@@ -72,7 +72,7 @@ training:
     horizon_size: 5                 # the num of future step in dynamic training framework
     curriculum:                     # curriculum learning
       enabled: true
-      update_interval: 100          # horizon++ for each update interval
+      update_interval: 2000         # horizon++ for each update interval
 
 
 # ==========================================================
