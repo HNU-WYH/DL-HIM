@@ -19,18 +19,19 @@ from src.utils.cfg_util import load_config
 # Pre-registered config for unresolved problem and testing data
 CONFIG_WILDCARD = "diffusion1d*"          # config filename wildcard
 DATASET_PATH: Optional[str] = None         # path to .npz dataset; None -> config default
-TEST_GRID_NUM = 81
+TEST_GRID_NUM = 201
 SAMPLE_INDICES: Sequence[int] = list(range(0, 201, 10))  # validation indices to evaluate
 
 # Pre-registered model checkpoints (use the keys inside CASES)
 # If Default is None, will raise an error
-MODEL_PATHS: Dict[str, Optional[str]] = {"Default": "checkpoints/diffusion1d/dynamic_residual_h1/diffusion_1D_Grid31_Ep20000_2025-12-05"}
+MODEL_PATHS: Dict[str, Optional[str]] = {"Default": "checkpoints/diffusion1d/static_error_h1/diffusion_1D_Grid31_Ep20000_2025-12-05"}
 
 # Evaluation plan: each dict describes one curve on the plot
 CASES: List[Dict] = [
     {"label": "Pure-DeepONet", "mode": "neural",    "model": "Default", "one_shot": True},
 
-    # {"label": "Gauss-Seidel",  "mode": "numerical", "model": None,  "numerical_method": "gauss-seidel"},
+    {"label": "Gauss-Seidel",  "mode": "numerical", "model": None,  "numerical_method": "gauss-seidel"},
+
     {"label": "Jacobi",        "mode": "numerical", "model": None,      "numerical_method": "jacobi"},
 
     {"label": "Jacobi-AA",     "mode": "numerical", "model": None,      "numerical_method": "jacobi", "neural_update": "aa", "aa_m": 15},
@@ -118,7 +119,7 @@ def apply_case_overrides(base_cfg: Box, case: Dict,
     if aa_m is not None:
         cfg.solver.hybrid["aa_m"] = aa_m
 
-    model_path = resolve_model_path(case.get("model"))
+    model_path = case.get("model_path") or resolve_model_path(case.get("model"))
     if model_path is not None:
         cfg["model_load_path"] = model_path
 
