@@ -98,7 +98,7 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
         print(f"Model and Loss saved to {os.path.dirname(cfg.model_save_path)}")
 
 
-def batch_train(trainer_types=("dynamic", "static", ),
+def batch_train(trainer_types=("dynamic", ),
                 loss_types=("error", "residual", ),
                 loss_norms=("h1", "l2", "l1", ),
                 config_wildcard=CONFIG_WILDCARD,
