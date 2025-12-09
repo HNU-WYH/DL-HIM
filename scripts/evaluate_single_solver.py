@@ -17,10 +17,11 @@ from src.utils.fdm_utils import expand_solution
 from src.utils.cfg_util import load_config
 
 # Pre-registered config for unresolved problem and testing data
-CONFIG_WILDCARD = "diffusion1d*"          # config filename wildcard
+CONFIG_WILDCARD = "diffusion1d*"           # config filename wildcard
 DATASET_PATH: Optional[str] = None         # path to .npz dataset; None -> config default
-TEST_GRID_NUM = 201
-SAMPLE_INDICES: Sequence[int] = list(range(0, 201, 10))  # validation indices to evaluate
+TEST_GRID_NUM: Optional[int] = None        # use dataset grid by default
+TEST_DATASET_PATH: Optional[str] = None    # path to .npz test dataset; None -> derive from the dataset path
+SAMPLE_INDICES: Sequence[int] = None       # validation indices to evaluate
 
 # Pre-registered model checkpoints (use the keys inside CASES)
 # If Default is None, will raise an error
@@ -52,7 +53,31 @@ TOL: Optional[float] = None
 # =====================
 # Helper functions
 # =====================
-def select_test_sample(grid_num, dataset, test_sample_indices: List[int] = None):
+def load_evaluation_dataset(cfg: Box) -> Tuple[np.lib.npyio.NpzFile, bool]:
+    """Load the preferred evaluation dataset.
+
+    Returns
+    -------
+    dataset: np.lib.npyio.NpzFile
+        The loaded dataset (test preferred, otherwise validation split).
+    use_test_dataset: bool
+        Whether the returned dataset is the dedicated test set.
+    """
+    dataset_path = DATASET_PATH or cfg["dataset_path"]
+
+    test_path = TEST_DATASET_PATH
+    if test_path is None:
+        base, ext = os.path.splitext(dataset_path)
+        test_path = f"{base}_test{ext}"
+
+    if os.path.exists(test_path):
+        return np.load(test_path), True
+
+    return np.load(dataset_path), False
+
+def select_test_sample(grid_num: Optional[int], dataset,
+                       test_sample_indices: List[int] = None,
+                       use_test_dataset: bool = False):
     if not isinstance(test_sample_indices, list):
         return_list = False
         test_sample_indices = [test_sample_indices]
@@ -60,14 +85,17 @@ def select_test_sample(grid_num, dataset, test_sample_indices: List[int] = None)
         return_list = True
 
     x_before = dataset["x_data"]
-    k = dataset["k_data_val"][test_sample_indices]
-    f = dataset["f_data_val"][test_sample_indices]
-    u = dataset["u_data_val"][test_sample_indices]
+    k_key = "k_data" if use_test_dataset else "k_data_val"
+    f_key = "f_data" if use_test_dataset else "f_data_val"
+    u_key = "u_data" if use_test_dataset else "u_data_val"
 
-    u_init = np.zeros(grid_num)
-    x_after = np.linspace(0,1, grid_num)
+    k = dataset[k_key][test_sample_indices]
+    f = dataset[f_key][test_sample_indices]
+    u = dataset[u_key][test_sample_indices]
 
-    if len(x_before) != len(x_after):
+    x_after = np.linspace(0, 1, grid_num) if grid_num else x_before
+
+    if grid_num and len(x_before) != len(x_after):
         k = [np.interp(x_after, x_before, k[i]) for i in range(k.shape[0])]
         f = [np.interp(x_after[1:-1], x_before[1:-1], f[i]) for i in range(f.shape[0])]
         u = [np.interp(x_after[1:-1], x_before[1:-1], u[i]) for i in range(u.shape[0])]
@@ -243,13 +271,18 @@ def average_histories(histories: Iterable[np.ndarray]) -> np.ndarray:
 
 def run_evaluation():
     cfg = apply_global_overrides(load_config(CONFIG_WILDCARD))
-    data = np.load(cfg["dataset_path"])
+    data, use_test_dataset = load_evaluation_dataset(cfg)
 
-    k_val, f_val, x_val, u_val = select_test_sample(TEST_GRID_NUM, data, SAMPLE_INDICES)
+    available_indices = list(range(len(data["k_data"] if use_test_dataset else data["k_data_val"])))
+    sample_indices = SAMPLE_INDICES if SAMPLE_INDICES is not None else available_indices
+    if any(idx not in available_indices for idx in sample_indices):
+        raise IndexError("Sample indices exceed available evaluation data")
 
+    k_val, f_val, x_val, u_val = select_test_sample(TEST_GRID_NUM or len(data["x_data"]), data,
+                                                    sample_indices, use_test_dataset=use_test_dataset)
     case_results = {case["label"]: {"errors": [], "residuals": [], "iters": None} for case in CASES}
 
-    for sample_idx, _ in enumerate(tqdm(SAMPLE_INDICES, desc="Samples")):
+    for sample_idx, _ in enumerate(tqdm(sample_indices, desc="Samples")):
         for case in CASES:
             err_hist, res_hist = evaluate_case_on_sample(
                 cfg,

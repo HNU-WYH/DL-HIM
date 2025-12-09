@@ -3,7 +3,9 @@ from typing import Dict, Iterable, List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+
 from tqdm import tqdm
+from typing import Optional
 
 from scripts.evaluate_single_solver import (
     CONFIG_WILDCARD,
@@ -11,11 +13,12 @@ from scripts.evaluate_single_solver import (
     apply_global_overrides,
     evaluate_case_on_sample,
     load_config,
+    load_evaluation_dataset,
     select_test_sample,
 )
 
 CHECKPOINT_ROOT = "checkpoints/diffusion1d"
-SAMPLE_INDEX = 0
+SAMPLE_INDICES: Optional[Iterable[int]] = None
 
 def discover_checkpoints(root: str = CHECKPOINT_ROOT) -> List[Tuple[str, str]]:
     """Return (label, path) pairs for checkpoints under the root directory."""
@@ -55,11 +58,14 @@ def average_histories(histories: Iterable[np.ndarray]) -> np.ndarray:
 
 def compare_checkpoints():
     cfg = apply_global_overrides(load_config(CONFIG_WILDCARD))
-    data = np.load(cfg["dataset_path"])
+    data, use_test_dataset = load_evaluation_dataset(cfg)
 
-    k_val, f_val, x_val, u_val = select_test_sample(TEST_GRID_NUM, data, [SAMPLE_INDEX])
-    k_sample, f_sample, u_sample = k_val[0], f_val[0], u_val[0]
-    x_nodes = x_val
+    k_key = "k_data" if use_test_dataset else "k_data_val"
+    sample_indices = list(SAMPLE_INDICES) if SAMPLE_INDICES is not None else list(range(len(data[k_key])))
+
+    k_samples, f_samples, x_nodes, u_samples = select_test_sample(
+        TEST_GRID_NUM or len(data["x_data"]), data, sample_indices, use_test_dataset=use_test_dataset
+    )
 
     checkpoint_cases = [build_case(label, path) for label, path in discover_checkpoints()]
 
@@ -69,18 +75,19 @@ def compare_checkpoints():
     case_results = {case["label"]: {"errors": [], "residuals": [], "iters": None} for case in checkpoint_cases}
 
     for case in tqdm(checkpoint_cases, desc="Checkpoints"):
-        err_hist, res_hist = evaluate_case_on_sample(
-            cfg,
-            case,
-            k_sample,
-            f_sample,
-            u_sample,
-            x_nodes,
-        )
+        for k_sample, f_sample, u_sample in zip(k_samples, f_samples, u_samples):
+            err_hist, res_hist = evaluate_case_on_sample(
+                cfg,
+                case,
+                k_sample,
+                f_sample,
+                u_sample,
+                x_nodes,
+            )
 
-        case_results[case["label"]]["errors"].append(err_hist)
-        case_results[case["label"]]["residuals"].append(res_hist)
-        case_results[case["label"]]["iters"] = np.arange(1, len(err_hist) + 1)
+            case_results[case["label"]]["errors"].append(err_hist)
+            case_results[case["label"]]["residuals"].append(res_hist)
+            case_results[case["label"]]["iters"] = np.arange(1, len(err_hist) + 1)
 
     avg_results = {}
     for label, store in case_results.items():
@@ -92,7 +99,7 @@ def compare_checkpoints():
     # plt.subplot(1, 2, 1)
     for label, vals in avg_results.items():
         plt.semilogy(vals["iter"], vals["error"], label=label)
-    plt.title("Relative Error vs Iteration (single sample)")
+    plt.title("Relative Error vs Iteration (dataset average)")
     plt.xlabel("Iteration")
     plt.ylabel("Relative L2 Error")
     plt.grid(True)

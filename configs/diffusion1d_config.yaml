@@ -68,7 +68,7 @@ testing:
     fixed_setting:
       value: 1.0
   f_x:
-    generator: [fixed, au, gaussian, grf]  # rhs generation types to mix for testing
+    generator: [fixed, gaussian, grf]  # rhs generation types to mix for testing
     gaussian_setting:                      # gaussian: f ~ N(0,1)
       standard: True                       # au: f = Au where u ~ N(0,1)
     fixed_setting:                         # fixed: f = 1
