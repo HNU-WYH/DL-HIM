@@ -123,7 +123,7 @@ class DynamicTrainer:
             u_curr = u_curr + delta_u
             r_batch = self._residual_compute(A_batch=A_batch, f_batch=f_batch, u_batch=u_curr)
 
-            if (step+1) % self.update_ratio == 0:
+            if step % self.update_ratio == 0:
                 u_seq.append(u_curr)
                 res_seq.append(r_batch)
 
