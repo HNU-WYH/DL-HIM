@@ -36,7 +36,7 @@ def apply_training_overrides(cfg: Box,
     return cfg
 
 
-def select_trainer(model, trainer_type: str = TRAINER_TYPE):
+def select_trainer(model, trainer_type: str = TRAINER_TYPE, save_path = None):
     """Return the proper trainer object based on the configuration."""
     trainer_type = trainer_type.lower()
 
@@ -44,7 +44,7 @@ def select_trainer(model, trainer_type: str = TRAINER_TYPE):
         return DynamicTrainer(model)
 
     if trainer_type == "static":
-        return StaticTrainer(model)
+        return StaticTrainer(model, plot_save_dir=save_path)
 
     raise ValueError(f"Trainer type {trainer_type} not supported")
 
@@ -68,8 +68,12 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
     cfg = load_config(config_wildcard)
     cfg = apply_training_overrides(cfg, loss_type, loss_norm, dataset_path, trainer_type)
 
+    # define the save path
+    ckpt_base = ckpt_dir(cfg)
+    os.makedirs(ckpt_base, exist_ok=True)
+
     model = create_no(cfg)
-    trainer = select_trainer(model, trainer_type)
+    trainer = select_trainer(model, trainer_type, save_path=ckpt_base)
     dataset = np.load(cfg.dataset_path, allow_pickle=True)
 
     trainer.load_dataset(dataset)
@@ -80,11 +84,7 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
     print(f"Final val loss:   {val_loss[-1]:.4e}")
 
     if save_after_train:
-        # define the save path
-        ckpt_base = ckpt_dir(cfg)
-        os.makedirs(ckpt_base, exist_ok=True)
         file_name = os.path.basename(cfg.model_save_path)
-
         cfg.model_save_path = os.path.join(ckpt_base, file_name)
         cfg.loss_save_path = os.path.join(ckpt_base, file_name + "_loss.npz")
 
@@ -98,9 +98,9 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
         print(f"Model and Loss saved to {os.path.dirname(cfg.model_save_path)}")
 
 
-def batch_train(trainer_types=("dynamic", ),
+def batch_train(trainer_types=("static", ),
                 loss_types=("error", "residual", ),
-                loss_norms=("h1", "l2", "l1", ),
+                loss_norms=("h1", "l2", ),
                 config_wildcard=CONFIG_WILDCARD,
                 dataset_path=DATASET_PATH,
                 save_after_train = SAVE_AFTER_TRAIN,

@@ -47,6 +47,8 @@ data:                                # The setting of mesh in training data
         freq_num: 3                  # the number for overlapping sine and cosine functions
         freq_upper: 10               # the upper bound of frequency
         amplitude: 0.5               # the upper bound of amplitude
+
+
 # ============================
 # 2.2 Testing data generation
 # ============================
@@ -56,7 +58,7 @@ testing:
   redundancy: 1.0                    # placeholder, meaningful only for Helmholtz equations
 
   mesh:
-    grid_num: 241                    # testing meshes differ from the training mesh such as [61, 241, 481]
+    grid_num: 1001                    # testing meshes differ from the training mesh such as [61, 241, 481]
     grid_type: uniform               # default to the same as training; can be customized
   k_x:                               # keep the same generation setting as training by default
     generator: grf
@@ -76,6 +78,7 @@ testing:
     grf_setting:                           # grf: gaussian random field
       sigma: [ 1.0, ]                      # same parameter as training data by default
       l0: [ 0.1, ]
+
 
 # ============================
 # 3. Neural operator training

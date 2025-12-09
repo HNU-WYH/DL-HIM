@@ -18,7 +18,7 @@ from scripts.evaluate_single_solver import (
 )
 
 CHECKPOINT_ROOT = "checkpoints/diffusion1d"
-SAMPLE_INDICES: Optional[Iterable[int]] = None
+SAMPLE_INDICES: Optional[Iterable[int]] = np.arange(10)
 
 def discover_checkpoints(root: str = CHECKPOINT_ROOT) -> List[Tuple[str, str]]:
     """Return (label, path) pairs for checkpoints under the root directory."""

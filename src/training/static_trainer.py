@@ -1,11 +1,21 @@
+import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
 import torch
 import numpy as np
 
+from typing import Optional
+
 from src.neural_operator import NeuralOperatorBase
+from src.utils.visualization import plot_test_samples
 
 
 class StaticTrainer:
-    def __init__(self, model: NeuralOperatorBase, print_interval: int = 1000):
+    def __init__(self, model: NeuralOperatorBase,
+                 print_interval: int = 1000,
+                 plot_interval: Optional[int] = 1000,
+                 plot_save_dir: Optional[str] = None,):
+
         self.model = model
         self.device = self.model.config.device
         self.epochs = self.model.config.training.num_epoch
@@ -16,6 +26,8 @@ class StaticTrainer:
         self.loss_norm = self.model.config.training.loss.norm.lower()
 
         self.print_interval = print_interval
+        self.plot_interval = plot_interval
+        self.plot_save_dir = plot_save_dir
 
         self.train_losses, self.val_losses = [], []
         self.k_val, self.f_val, self.u_val, self.du_val, self.a_mats_val = None, None, None, None, None
@@ -120,7 +132,7 @@ class StaticTrainer:
         with torch.no_grad():
             pred_dict = self.model(k_x=self.k_val, f_x=self.f_val, a_mats=self.a_mats_val)
             val_loss = torch.nn.functional.mse_loss(pred_dict["u_pred"], self.u_val)
-        return val_loss.item()
+        return val_loss.item(), pred_dict["u_pred"]
 
     def train(self):
         """
@@ -128,7 +140,7 @@ class StaticTrainer:
         """
         for epoch in range(self.epochs):
             train_loss = self.train_epoch()
-            val_loss = self.val_epoch()
+            val_loss, val_pred = self.val_epoch()
 
             self.train_losses.append(train_loss)
             self.val_losses.append(val_loss)
@@ -136,4 +148,24 @@ class StaticTrainer:
             if epoch % self.print_interval == 0 or epoch == self.epochs - 1:
                 print(f"Epoch [{epoch}/{self.epochs}], Train Loss: {train_loss: .4e}, Val Loss: {val_loss: .4e}")
 
+            self._maybe_plot_validation(epoch, val_pred)
+
         return np.array(self.train_losses), np.array(self.val_losses)
+
+    def _maybe_plot_validation(self, epoch, val_pred):
+        if self.plot_interval is None:
+            return
+
+        if self.plot_save_dir is None:
+            return
+
+        if (epoch % self.plot_interval == 0) or (epoch == self.epochs - 1):
+            val_pred = val_pred.detach().cpu().numpy()
+            plot_test_samples(epoch_index=epoch + 1,
+                              x_nodes=self.model.don_x_nodes_np[1:-1],
+                              u_test_pred=val_pred,
+                              u_test=self.u_val.detach().cpu().numpy(),
+                              out_dir=self.plot_save_dir,
+                              )
+        else:
+            return
