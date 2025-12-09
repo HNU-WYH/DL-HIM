@@ -3,7 +3,7 @@ import warnings
 import numpy as np
 
 from typing import Optional
-from functorch import vmap
+from torch import vmap
 
 from src.neural_operator import NeuralOperatorBase
 
