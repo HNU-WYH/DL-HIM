@@ -3,7 +3,7 @@ import warnings
 import numpy as np
 
 from typing import Optional
-# from functorch import vmap
+from functorch import vmap
 
 from src.neural_operator import NeuralOperatorBase
 
@@ -134,22 +134,34 @@ class DynamicTrainer:
     def _compute_du(self, batch_func: torch.Tensor, x_nodes: Optional[torch.Tensor] = None):
         """
         params:
-            batch_func: [S, B, N-2,];
+            batch_func: [S, B, N-2,] or list/tuple of [B, N-2] tensors;
             x_nodes: [N-2,];
         """
         if x_nodes is not None:
             x_nodes = torch.as_tensor(x_nodes, dtype=torch.float32, device=self.device)     # [N-2, ]
         else:
             x_nodes = self.x_nodes[1:-1]                                                    # [N-2, ]
-        gradient_value = torch.gradient(input=batch_func, spacing=(x_nodes,), dim = -1)                # [B, N-2]
-        return gradient_value
+
+        def gradient_compute(single_func, x_data):
+            """
+            params:
+                single_func: [B, N-2,];
+                x_nodes: [N-2,];
+            return:
+                grad: [B, N-2]
+            """
+            grad_tuple = torch.gradient(input=single_func, spacing=(x_data,), dim=1)
+            return grad_tuple[0]
+
+        batch_gradient = vmap(gradient_compute, in_dims=(0, None))
+        return batch_gradient(batch_func, x_nodes)
 
     def compute_loss(self, u_seq: torch.Tensor, res_seq: torch.Tensor,
                      u_true: Optional[torch.Tensor]=None, du_true: Optional[torch.Tensor]=None):
         """
         params:
-            u_seq: [S, B, N-2];
-            res_seq: [S, B, N-2];
+            u_seq:  list of [B, N-2];
+            res_seq: list of [B, N-2];
             u_true: [B, N-2,];
             du_true: [B, N-2,];
         return:
