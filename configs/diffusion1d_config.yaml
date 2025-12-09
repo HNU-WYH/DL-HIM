@@ -12,7 +12,7 @@ problem:
 
 
 # =================================================================================
-# 2. Data generation configs (Generate Training & Testing Data for Neural Operator)
+# 2.1 Data generation configs (Generate Training & Testing Data for Neural Operator)
 # =================================================================================
 data:                                # The setting of mesh in training data
   func_num: 10000                    # the count of data in the overall dataset (including training and validating)
@@ -47,7 +47,35 @@ data:                                # The setting of mesh in training data
         freq_num: 3                  # the number for overlapping sine and cosine functions
         freq_upper: 10               # the upper bound of frequency
         amplitude: 0.5               # the upper bound of amplitude
+# ============================
+# 2.2 Testing data generation
+# ============================
+testing:
+  func_num: 30                       # size of testing data (number of k_x, while f_x = len(f_x.generator) * func_num)
+  threshold: 1.0                     # placeholder, meaningful only for Helmholtz equations
+  redundancy: 1.0                    # placeholder, meaningful only for Helmholtz equations
 
+  mesh:
+    grid_num: 241                    # testing meshes differ from the training mesh such as [61, 241, 481]
+    grid_type: uniform               # default to the same as training; can be customized
+  k_x:                               # keep the same generation setting as training by default
+    generator: grf
+    grf_setting:
+      sigma: [0.3,]
+      l0: [0.1,]
+      mean: 1.0
+      minimal: 0.3
+    fixed_setting:
+      value: 1.0
+  f_x:
+    generator: [fixed, au, gaussian, grf]  # rhs generation types to mix for testing
+    gaussian_setting:                      # gaussian: f ~ N(0,1)
+      standard: True                       # au: f = Au where u ~ N(0,1)
+    fixed_setting:                         # fixed: f = 1
+      value: 1.0
+    grf_setting:                           # grf: gaussian random field
+      sigma: [ 1.0, ]                      # same parameter as training data by default
+      l0: [ 0.1, ]
 
 # ============================
 # 3. Neural operator training
@@ -61,7 +89,7 @@ training:
   weight_decay: !!float 1e-8        # weight decay
 
   loss:
-    type: Residual                     # the type of loss function (Residual, Error)
+    type: Residual                  # the type of loss function (Residual, Error)
     norm: l2                        # norm type ("l1“, "l2", "h1")
     grad_alpha: 0.1                 # weight for gradient term
 
@@ -71,7 +99,7 @@ training:
   dynamic:                          # dynamic training settings (not used in static)
     horizon_size: 5                 # the num of future step in dynamic training framework
     curriculum:                     # curriculum learning
-      enabled: true
+      enabled: false                # true/True or false/False
       update_interval: 2000         # horizon++ for each update interval
 
 

@@ -49,6 +49,10 @@ def ensure_list_in_field(config, filed_paths=None):
             'data.k_x.grf_setting.l0',
             'data.f_x.grf_setting.sigma',
             'data.f_x.grf_setting.l0',
+            'testing.k_x.grf_setting.sigma',
+            'testing.k_x.grf_setting.l0',
+            'testing.f_x.grf_setting.sigma',
+            'testing.f_x.grf_setting.l0',
             'solver.eigen_tracking.modes_of_interest'
         ]
 

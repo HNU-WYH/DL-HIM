@@ -15,7 +15,7 @@ class Diffusion1D:
         """
         Args:
             x_nodes: uniform / non-uniform grid in [0,1]  shape: (n,)
-            k_x: parameter function                       shape: (n,) or (1,)
+            k_x: parameter function                       shape: (n,)
             f_x: rhs function                             shape: (n,)
             mat_type: "sparse" or "dense"
         """

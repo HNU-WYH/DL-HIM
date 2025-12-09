@@ -88,8 +88,8 @@ def compare_checkpoints():
         avg_res = average_histories(store["residuals"])
         avg_results[label] = {"iter": store["iters"], "error": avg_err, "residual": avg_res}
 
-    plt.figure(figsize=(12, 5))
-    plt.subplot(1, 2, 1)
+    plt.figure(figsize=(6, 5))
+    # plt.subplot(1, 2, 1)
     for label, vals in avg_results.items():
         plt.semilogy(vals["iter"], vals["error"], label=label)
     plt.title("Relative Error vs Iteration (single sample)")
@@ -98,14 +98,14 @@ def compare_checkpoints():
     plt.grid(True)
     plt.legend()
 
-    plt.subplot(1, 2, 2)
-    for label, vals in avg_results.items():
-        plt.semilogy(vals["iter"], vals["residual"], label=label)
-    plt.title("Residual vs Iteration (single sample)")
-    plt.xlabel("Iteration")
-    plt.ylabel("Residual (L-inf)")
-    plt.grid(True)
-    plt.legend()
+    # plt.subplot(1, 2, 2)
+    # for label, vals in avg_results.items():
+    #     plt.semilogy(vals["iter"], vals["residual"], label=label)
+    # plt.title("Residual vs Iteration (single sample)")
+    # plt.xlabel("Iteration")
+    # plt.ylabel("Residual (L-inf)")
+    # plt.grid(True)
+    # plt.legend()
 
     plt.tight_layout()
     plt.show()

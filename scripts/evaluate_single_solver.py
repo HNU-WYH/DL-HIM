@@ -140,7 +140,6 @@ def pad_series(values: List[float], target_len: int) -> np.ndarray:
 
 #TODO: 这里改为直接用cfg会不会更好? 每一次迭代都用override的cfg来工作
 #TODO: 这里我一会儿又要expand,一会儿又不要,这里也要改
-#TODO: 最好加一个专门用于test的dataset
 def collect_history(solver: HybridSolver,
                     u_ref_inner: np.ndarray,
                     max_iter: int, tol: float,

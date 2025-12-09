@@ -148,7 +148,7 @@ def gaussian_generate(x_nodes, func_num, **kwargs):
 
 def fixed_generate(x_nodes, func_num, value=1.0, **kwargs):
     x_num = len(x_nodes)
-    f_x = np.ones(shape=(x_num, func_num))
+    f_x = np.ones(shape=(func_num, x_num))
     f_x = value * f_x
     return f_x
 
