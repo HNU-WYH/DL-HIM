@@ -109,23 +109,23 @@ class DeepONet1d(NeuralOperatorBase):
 
         # Apply f normalization
         # (B, num_x-2) * (B, 1) -> (B, num_x-2)
-        u_pred = u_net * f_norm
+        u_norm = u_net * f_norm
 
         # Apply hard constraints
         H_x = self.hard_constraints(trunk_input).squeeze(-1)  # (num_x-2)
-        u_pred = u_pred * H_x  # (B, num_x-2) * (num_x-2) -> (B, num_x-2)
+        u_pred = u_norm * H_x  # (B, num_x-2) * (num_x-2) -> (B, num_x-2)
 
         res, du_pred, dres = None, None, None
         if self.require_res and a_mats is not None:
             res = self.compute_residual(a_mats, f_x, u_pred)
 
         if self.require_du:
-            jvp = self._compute_jvp(trunk_input)    # (num_x-2, f_dim)
-            du_net = (branch_out @ jvp.T) * f_norm  # (B, num_x-2)
+            jvp = self._compute_jvp(trunk_input)      # (num_x-2, f_dim)
+            du_norm = (branch_out @ jvp.T) * f_norm   # (B, num_x-2)
 
-            x_coords = trunk_input.squeeze(-1)      # (numx-2, )
-            dH_x = 1.0 - 2.0 * x_coords             # (numx-2, )
-            du_pred = du_net * H_x + u_net * dH_x   # (B, num_x-2)
+            x_coords = trunk_input.squeeze(-1)        # (numx-2, )
+            dH_x = 1.0 - 2.0 * x_coords               # (numx-2, )
+            du_pred = du_norm * H_x + u_norm * dH_x   # (B, num_x-2)
 
             if self.require_dres and a_mats is not None:
                 dres = (-a_mats @ du_pred[..., None]).squeeze(-1)  # (B, num_x-2, num_x-2) @ (B, num_x-2, 1)
@@ -178,11 +178,11 @@ class DeepONet1d(NeuralOperatorBase):
             trunk_out = self.trunk_net(query_points)                        # (G-2, f_dim)
 
             u_net = branch_out @ trunk_out.T                                # (B, G-2)
-            u_net = u_net * f_norm                                          # Apply normalization
+            u_norm = u_net * f_norm                                          # Apply normalization
 
             if self.hard_constraints:
                 H_x = self.hard_constraints(query_points).squeeze(-1)       # (G-2, )
-                u = u_net * H_x                                             # Apply hard constraints
+                u = u_norm * H_x                                             # Apply hard constraints
 
             if batch_size == 1:
                 u = u.squeeze()
