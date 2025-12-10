@@ -25,7 +25,7 @@ SAMPLE_INDICES: Sequence[int] = None       # validation indices to evaluate
 
 # Pre-registered model checkpoints (use the keys inside CASES)
 # If Default is None, will raise an error
-MODEL_PATHS: Dict[str, Optional[str]] = {"Default": "checkpoints/diffusion1d/static_error_h1/diffusion_1D_Grid31_Ep20000_2025-12-05"}
+MODEL_PATHS: Dict[str, Optional[str]] = {"Default": "checkpoints/diffusion1d/static_error_l2/diffusion_1D_Grid31_Ep20000_2025-12-10.pt"}
 
 # Evaluation plan: each dict describes one curve on the plot
 CASES: List[Dict] = [

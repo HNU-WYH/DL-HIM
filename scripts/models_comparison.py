@@ -45,7 +45,7 @@ def build_case(label: str, model_path: str) -> Dict:
         "mode": "hybrid",
         "numerical_method": "jacobi",
         "hybrid_ratio": 20,
-        "neural_update": "aa",
+        "neural_update": "cg",
         "aa_m": 15,
         "model_path": model_path,
     }
