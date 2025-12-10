@@ -5,6 +5,7 @@ import torch
 import numpy as np
 
 from typing import Optional
+import matplotlib.pyplot as plt
 
 from src.neural_operator import NeuralOperatorBase
 from src.utils.visualization import plot_test_samples
@@ -150,7 +151,9 @@ class StaticTrainer:
 
             self._maybe_plot_validation(epoch, val_pred)
 
-        return np.array(self.train_losses), np.array(self.val_losses)
+        self.train_losses, self.val_losses = np.array(self.train_losses), np.array(self.val_losses)
+        self._plot_loss_history(os.path.join(self.plot_save_dir, "loss_curve.png"))
+        return self.train_losses, self.val_losses
 
     def _maybe_plot_validation(self, epoch, val_pred):
         if self.plot_interval is None:
@@ -169,3 +172,21 @@ class StaticTrainer:
                               )
         else:
             return
+
+    def _plot_loss_history(self, out_path: str):
+        if len(self.train_losses) == 0:
+            return
+
+        epochs = np.arange(1, len(self.train_losses) + 1)
+
+        plt.figure(figsize=(8, 5))
+        plt.plot(epochs, self.train_losses, label="Train Loss")
+        plt.plot(epochs, self.val_losses, label="Validation Loss")
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.title("Training and Validation Loss")
+        plt.legend()
+        plt.grid(True, linestyle="--", alpha=0.5)
+        plt.tight_layout()
+        plt.savefig(out_path, dpi=150)
+        plt.close()

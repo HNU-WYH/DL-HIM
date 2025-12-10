@@ -1,15 +1,22 @@
+import os
 import torch
 import warnings
 import numpy as np
 
+import matplotlib.pyplot as plt
 from typing import Optional
 from torch import vmap
 
 from src.neural_operator import NeuralOperatorBase
-
+from src.utils.visualization import plot_test_samples
 
 class DynamicTrainer:
-    def __init__(self, model: NeuralOperatorBase, print_interval: int = 1000):
+    def __init__(self, model: NeuralOperatorBase,
+                 print_interval: int = 1000,
+                 plot_interval: int = 1000,
+                 plot_save_dir: Optional[str] = None,
+                 ):
+
         # Initialization
         self.model = model
         self.device = self.model.device
@@ -37,8 +44,12 @@ class DynamicTrainer:
         self.update_ratio = solver_cfg.hybrid.get("update_ratio", 20)
         self.relax_factor = solver_cfg.numerical.get("relaxation_factor", 0.6)
 
-        # print setting
+        # print and visualization setting
         self.print_interval = print_interval
+        self.plot_interval = plot_interval
+        self.plot_save_dir = plot_save_dir
+        self.sole_plot_dir = os.path.join(plot_save_dir, "sole_operator") if plot_save_dir else None
+        self.rollout_plot_dir = os.path.join(plot_save_dir, "hybrid_rollout") if plot_save_dir else None
 
         # dataset initialization
         self.train_losses, self.val_losses = [], []
@@ -249,8 +260,10 @@ class DynamicTrainer:
         self.model.eval()
         with torch.no_grad():
             pred_dict = self.model(k_x=self.k_val, f_x=self.f_val, a_mats=self.a_mats_val)
-            val_loss = torch.nn.functional.mse_loss(pred_dict["u_pred"], self.u_val)
-        return val_loss.item()
+
+            sole_pred = pred_dict["u_pred"]
+            val_loss = torch.nn.functional.mse_loss(sole_pred, self.u_val)
+        return val_loss.item(), sole_pred
 
     def _update_curriculum(self, epoch: int):
         if self.curriculum_enabled and (epoch + 1) % self.curriculum_interval == 0:
@@ -262,7 +275,7 @@ class DynamicTrainer:
         """
         for epoch in range(self.epochs):
             train_loss = self.train_epoch()
-            val_loss = self.val_epoch()
+            val_loss, val_pred = self.val_epoch()
             self._update_curriculum(epoch)
 
             self.train_losses.append(train_loss)
@@ -271,4 +284,75 @@ class DynamicTrainer:
             if epoch % self.print_interval == 0 or epoch == self.epochs - 1:
                 print(f"Epoch [{epoch}/{self.epochs}], Train Loss: {train_loss: .4e}, Val Loss: {val_loss: .4e}, Horizon: {self.current_horizon}")
 
-        return np.array(self.train_losses), np.array(self.val_losses)
+            self._maybe_sole_validation(epoch, val_pred)
+            self._maybe_rollout_validation(epoch)
+
+        self.train_losses, self.val_losses = np.array(self.train_losses), np.array(self.val_losses)
+        self._plot_loss_history(os.path.join(self.plot_save_dir, "loss_curve.png"))
+        return self.train_losses, self.val_losses
+
+    def _maybe_sole_validation(self, epoch: int, val_pred: torch.Tensor):
+        if self.plot_interval is None:
+            return
+
+        if self.sole_plot_dir is None:
+            return
+
+        should_plot = (epoch % self.plot_interval == 0) or (epoch == self.epochs - 1)
+        if not should_plot:
+            return
+
+        x_nodes = self.x_nodes[1:-1]
+        u_true = self.u_val.detach().cpu().numpy()
+
+        plot_test_samples(epoch_index=epoch + 1,
+                          x_nodes=x_nodes,
+                          u_test_pred=val_pred.detach().cpu().numpy(),
+                          u_test=u_true,
+                          out_dir=self.sole_plot_dir)
+
+    def _maybe_rollout_validation(self, epoch):
+        if self.plot_interval is None:
+            return
+
+        if self.rollout_plot_dir is None:
+            return
+
+        should_plot = (epoch % self.plot_interval == 0) or (epoch == self.epochs - 1)
+        if not should_plot:
+            return
+
+        x_nodes = self.x_nodes[1:-1]
+        u_true = self.u_val.detach().cpu().numpy()
+
+        self.model.eval()
+        with torch.no_grad():
+            rollout_seq, _ = self._hybrid_rollout(A_batch=self.a_mats_val,
+                                                  f_batch=self.f_val,
+                                                  k_batch=self.k_val,
+                                                  u_curr=None,
+                                                  horizon=self.max_horizon)
+            rollout_pred = rollout_seq[-1]
+
+        plot_test_samples(epoch_index=epoch + 1,
+                          x_nodes=x_nodes,
+                          u_test_pred=rollout_pred.detach().cpu().numpy(),
+                          u_test=u_true,
+                          out_dir=self.rollout_plot_dir)
+
+    def _plot_loss_history(self, out_path: str):
+        if len(self.train_losses) == 0:
+            return
+        epochs = np.arange(1, len(self.train_losses) + 1)
+        plt.figure(figsize=(8, 5))
+        plt.plot(epochs, np.array(self.train_losses), label="Train Loss")
+        plt.plot(epochs, np.array(self.val_losses), label="Validation Loss")
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.title("Training and Validation Loss")
+        plt.legend()
+        plt.grid(True, linestyle="--", alpha=0.5)
+        plt.tight_layout()
+        plt.savefig(out_path, dpi=150)
+        plt.close()
+
