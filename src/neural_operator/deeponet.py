@@ -10,7 +10,7 @@ from src.utils.gen1d_util import generate_x_nodes
 
 
 class DeepONet1d(NeuralOperatorBase):
-    def __init__(self, config: Box):  # hard_constraints=None):
+    def __init__(self, config: Box):
         super().__init__(config)
 
         # Get grid properties and function dimensions
@@ -18,12 +18,11 @@ class DeepONet1d(NeuralOperatorBase):
         self.don_x_nodes_np = generate_x_nodes(config.data.mesh.grid_type, self.don_num_x_nodes)
         self.register_buffer("don_x_nodes_torch", torch.tensor(self.don_x_nodes_np[1:-1, None], dtype=torch.float32))
 
-        # can be lambda x: x.T * (x.T-1.0), but not necessary
-        # if provided, apply hard constraints
-        # self.hard_constraints = hard_constraints
+        # define a hard constraint H(x) = x * (x - 1.0)
+        # This forces the solution to be 0 at x=0 and x=1
+        self.hard_constraints = lambda x: x * (1.0 - x)
 
         # for normalizing the parameter function k(x)
-        # giving value when training
         self.register_buffer("k_mean", torch.zeros(1, dtype=torch.float32))
         self.register_buffer("k_sigma", torch.zeros(1, dtype=torch.float32))
 
@@ -38,7 +37,7 @@ class DeepONet1d(NeuralOperatorBase):
 
     def _build_branch(self, input_size):
         """
-        Each branch network will take k_x or f_x as input and output f_dim features.
+        Each branch network will take k_x and f_x as input and output f_dim features.
         """
         if self.n_dim == 1:
             return nn.Sequential(
@@ -105,28 +104,31 @@ class DeepONet1d(NeuralOperatorBase):
         # Get trunk output
         trunk_out = self.trunk_net(trunk_input)  # (num_x-2, f_dim)
 
-        # Final output computation
-        u_pred = branch_out @ trunk_out.T  # (B, num_x-2)
+        # Intermediate output computation
+        u_net = branch_out @ trunk_out.T  # (B, num_x-2)
 
-        # Apply normalization
-        u_pred = u_pred * f_norm  # (B, num_x-2) * (B, 1) -> (B, num_x-2)
+        # Apply f normalization
+        # (B, num_x-2) * (B, 1) -> (B, num_x-2)
+        u_pred = u_net * f_norm
 
-        # # Apply hard constraints if needed
-        # if self.hard_constraints:
-        #     H_x = self.hard_constraints(query_points).squeeze()  # (num_x-2)
-        #     u_pred = u_pred * H_x  # (B, num_x-2) * (num_x-2) -> (B, num_x-2)
+        # Apply hard constraints
+        H_x = self.hard_constraints(trunk_input).squeeze(-1)  # (num_x-2)
+        u_pred = u_pred * H_x  # (B, num_x-2) * (num_x-2) -> (B, num_x-2)
 
         res, du_pred, dres = None, None, None
         if self.require_res and a_mats is not None:
             res = self.compute_residual(a_mats, f_x, u_pred)
 
         if self.require_du:
-            jvp = self._compute_jvp(trunk_input)  # (num_x-2, f_dim)
-            du_pred = (branch_out @ jvp.T) * f_norm  # (B, num_x-2)
-            # Warning: "If a hard constraint is applied, the gradient is: du = du_pred * H + u_pred * dH"
+            jvp = self._compute_jvp(trunk_input)    # (num_x-2, f_dim)
+            du_net = (branch_out @ jvp.T) * f_norm  # (B, num_x-2)
+
+            x_coords = trunk_input.squeeze(-1)      # (numx-2, )
+            dH_x = 1.0 - 2.0 * x_coords             # (numx-2, )
+            du_pred = du_net * H_x + u_net * dH_x   # (B, num_x-2)
 
             if self.require_dres and a_mats is not None:
-                dres = (-a_mats @ du_pred[..., None]).squeeze(-1)  # (B, num_x-2, num_x-2) @ (B, num_x-2)
+                dres = (-a_mats @ du_pred[..., None]).squeeze(-1)  # (B, num_x-2, num_x-2) @ (B, num_x-2, 1)
 
         return {
             "u_pred": u_pred,
@@ -175,12 +177,12 @@ class DeepONet1d(NeuralOperatorBase):
             branch_out = self.branch_net(branch_in)                         # (B, f_dim)
             trunk_out = self.trunk_net(query_points)                        # (G-2, f_dim)
 
-            u = branch_out @ trunk_out.T                                    # (B, G-2)
-            u = u * f_norm                                                  # Apply normalization
+            u_net = branch_out @ trunk_out.T                                # (B, G-2)
+            u_net = u_net * f_norm                                          # Apply normalization
 
-            # if self.hard_constraints:
-            #     H_x = self.hard_constraints(query_points).squeeze()       # (num_x-2)
-            #     u = u * H_x  # Apply hard constraints
+            if self.hard_constraints:
+                H_x = self.hard_constraints(query_points).squeeze(-1)       # (G-2, )
+                u = u_net * H_x                                             # Apply hard constraints
 
             if batch_size == 1:
                 u = u.squeeze()
