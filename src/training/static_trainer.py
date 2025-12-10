@@ -168,7 +168,7 @@ class StaticTrainer:
                               x_nodes=self.model.don_x_nodes_np[1:-1],
                               u_test_pred=val_pred,
                               u_test=self.u_val.detach().cpu().numpy(),
-                              out_dir=self.plot_save_dir,
+                              out_dir=os.path.join(self.plot_save_dir, "sole_operator"),
                               )
         else:
             return
@@ -178,7 +178,7 @@ class StaticTrainer:
             return
 
         epochs = np.arange(1, len(self.train_losses) + 1)
-
+        os.makedirs(out_path, exist_ok=True)
         plt.figure(figsize=(8, 5))
         plt.plot(epochs, self.train_losses, label="Train Loss")
         plt.plot(epochs, self.val_losses, label="Validation Loss")
@@ -190,3 +190,4 @@ class StaticTrainer:
         plt.tight_layout()
         plt.savefig(out_path, dpi=150)
         plt.close()
+

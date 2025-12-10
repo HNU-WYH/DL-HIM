@@ -41,7 +41,7 @@ def select_trainer(model, trainer_type: str = TRAINER_TYPE, save_path = None):
     trainer_type = trainer_type.lower()
 
     if trainer_type == "dynamic":
-        return DynamicTrainer(model)
+        return DynamicTrainer(model, plot_save_dir=save_path)
 
     if trainer_type == "static":
         return StaticTrainer(model, plot_save_dir=save_path)
@@ -99,9 +99,9 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
         print(f"Model and Loss saved to {os.path.dirname(cfg.model_save_path)}")
 
 
-def batch_train(trainer_types=("static", ),
+def batch_train(trainer_types=("dynamic", ),
                 loss_types=("residual", "error",),
-                loss_norms=("l2", "l1", ),
+                loss_norms=("l2", "l1", "h1"),
                 config_wildcard=CONFIG_WILDCARD,
                 dataset_path=DATASET_PATH,
                 save_after_train=SAVE_AFTER_TRAIN,

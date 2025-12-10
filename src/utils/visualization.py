@@ -47,8 +47,7 @@ def plot_test_samples(
         labels: Legend labels for the prediction curves.
     """
 
-    test_fig_dir = os.path.join(out_dir, "test")
-    os.makedirs(test_fig_dir, exist_ok=True)
+    os.makedirs(out_dir, exist_ok=True)
 
     x_nodes = _prepare_x_nodes(x_nodes)
 
@@ -90,7 +89,7 @@ def plot_test_samples(
     fig.suptitle(f"[Epoch {epoch_index}] L2 Err: {l2_error:.4f} × 10⁻⁴", fontsize=14)
     plt.tight_layout(rect=[0, 0, 1, 0.95])
 
-    test_fig_path = os.path.join(test_fig_dir, f"Fig_Test_epoch_{epoch_index}.png")
+    test_fig_path = os.path.join(out_dir, f"Fig_Test_epoch_{epoch_index}.png")
     plt.savefig(test_fig_path, dpi=150)
     plt.close(fig)
 
