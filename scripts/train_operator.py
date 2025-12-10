@@ -52,8 +52,9 @@ def select_trainer(model, trainer_type: str = TRAINER_TYPE, save_path = None):
 def ckpt_dir(cfg: Box):
     problem_name, trainer_type = cfg.problem.type.lower(), cfg.training.mode.lower()
     loss_type, loss_norm = cfg.training.loss.type.lower(), cfg.training.loss.norm.lower()
+    n_dim = cfg.problem.n_dim
 
-    ckpt_base = f"./checkpoints/{problem_name}/{trainer_type}_{loss_type}_{loss_norm}"
+    ckpt_base = f"./checkpoints/{problem_name}{n_dim}d/{trainer_type}_{loss_type}_{loss_norm}"
     return ckpt_base
 
 
@@ -99,11 +100,11 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
 
 
 def batch_train(trainer_types=("static", ),
-                loss_types=("error", "residual", ),
-                loss_norms=("h1", "l2", ),
+                loss_types=("residual", "error",),
+                loss_norms=("l2", "l1", ),
                 config_wildcard=CONFIG_WILDCARD,
                 dataset_path=DATASET_PATH,
-                save_after_train = SAVE_AFTER_TRAIN,
+                save_after_train=SAVE_AFTER_TRAIN,
                 ):
     """
     Checkpoints will be saved under:

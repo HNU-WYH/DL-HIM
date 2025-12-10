@@ -33,7 +33,7 @@ def discover_checkpoints(root: str = CHECKPOINT_ROOT) -> List[Tuple[str, str]]:
 
         for candidate in sorted(os.listdir(family_path)):
             candidate_path = os.path.join(family_path, candidate)
-            if not candidate_path.endswith(".npz"):
+            if candidate_path.endswith(".pt"):
                 # label = os.path.join(family, candidate)
                 checkpoint_pairs.append((family, candidate_path))
     return checkpoint_pairs
@@ -45,7 +45,7 @@ def build_case(label: str, model_path: str) -> Dict:
         "mode": "hybrid",
         "numerical_method": "jacobi",
         "hybrid_ratio": 20,
-        "neural_update": "cg",
+        "neural_update": "aa",
         "aa_m": 15,
         "model_path": model_path,
     }

@@ -35,7 +35,7 @@ data:                                # The setting of mesh in training data
       value: 1.0                     # value of constant k(x)
 
   f_x:                               # The parameter for parameter function f(x)
-      generator: gaussian            # fourier, grf, gaussian, or fixed
+      generator: grf                 # fourier, grf, gaussian, or fixed
       grf_setting:                   # The GRFs parameter for parameter function k(x) (meaningless for Fourier and Gaussian)
         sigma: [1.0,]                # large -> large amplitude, default: 1.0
         l0: [0.1,]                   # less -> high frequency, default: 0.1
@@ -58,7 +58,7 @@ testing:
   redundancy: 1.0                    # placeholder, meaningful only for Helmholtz equations
 
   mesh:
-    grid_num: 1001                    # testing meshes differ from the training mesh such as [61, 241, 481]
+    grid_num: 201s                    # testing meshes differ from the training mesh such as [61, 241, 481]
     grid_type: uniform               # default to the same as training; can be customized
   k_x:                               # keep the same generation setting as training by default
     generator: grf
