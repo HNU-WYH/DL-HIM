@@ -179,6 +179,7 @@ class DeepONet1d(NeuralOperatorBase):
 
             u_net = branch_out @ trunk_out.T                                # (B, G-2)
             u_norm = u_net * f_norm                                          # Apply normalization
+            u = u_norm
 
             if self.hard_constraints:
                 H_x = self.hard_constraints(query_points).squeeze(-1)       # (G-2, )
