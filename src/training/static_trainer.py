@@ -152,7 +152,7 @@ class StaticTrainer:
             self._maybe_plot_validation(epoch, val_pred)
 
         self.train_losses, self.val_losses = np.array(self.train_losses), np.array(self.val_losses)
-        self._plot_loss_history(os.path.join(self.plot_save_dir, "loss_curve.png"))
+        self._plot_loss_history(out_path=self.plot_save_dir)
         return self.train_losses, self.val_losses
 
     def _maybe_plot_validation(self, epoch, val_pred):
@@ -177,8 +177,10 @@ class StaticTrainer:
         if len(self.train_losses) == 0:
             return
 
-        epochs = np.arange(1, len(self.train_losses) + 1)
         os.makedirs(out_path, exist_ok=True)
+        fig_path = os.path.join(out_path, "loss_curve.png")
+        epochs = np.arange(1, len(self.train_losses) + 1)
+
         plt.figure(figsize=(8, 5))
         plt.plot(epochs, self.train_losses, label="Train Loss")
         plt.plot(epochs, self.val_losses, label="Validation Loss")
@@ -188,6 +190,6 @@ class StaticTrainer:
         plt.legend()
         plt.grid(True, linestyle="--", alpha=0.5)
         plt.tight_layout()
-        plt.savefig(out_path, dpi=150)
+        plt.savefig(fig_path, dpi=150)
         plt.close()
 
