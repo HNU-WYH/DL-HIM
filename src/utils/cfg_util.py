@@ -117,7 +117,7 @@ def load_config(config_wildcard: str = "diffusion1d*",
                                                  str(config.problem.n_dim) + "D_Grid" +
                                                  str(config.data.mesh.grid_num) + "_Ep" +
                                                  str(config.training.num_epoch) + "_" +
-                                                 str(datetime.now())[:10] + ".pt")
+                                                 str(datetime.now())[:10])
 
     # add the training & validation data information
     if dataset_name is not None:

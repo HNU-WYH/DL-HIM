@@ -18,7 +18,7 @@ from scripts.evaluate_single_solver import (
 )
 
 CHECKPOINT_ROOT = "checkpoints/diffusion1d"
-SAMPLE_INDICES: Optional[Iterable[int]] = np.arange(10)
+SAMPLE_INDICES: Optional[Iterable[int]] = None
 
 def discover_checkpoints(root: str = CHECKPOINT_ROOT) -> List[Tuple[str, str]]:
     """Return (label, path) pairs for checkpoints under the root directory."""
@@ -45,7 +45,7 @@ def build_case(label: str, model_path: str) -> Dict:
         "mode": "hybrid",
         "numerical_method": "jacobi",
         "hybrid_ratio": 20,
-        "neural_update": "cg",
+        "neural_update": "fixed",
         "aa_m": 15,
         "model_path": model_path,
     }
@@ -76,14 +76,7 @@ def compare_checkpoints():
 
     for case in tqdm(checkpoint_cases, desc="Checkpoints"):
         for k_sample, f_sample, u_sample in zip(k_samples, f_samples, u_samples):
-            err_hist, res_hist = evaluate_case_on_sample(
-                cfg,
-                case,
-                k_sample,
-                f_sample,
-                u_sample,
-                x_nodes,
-            )
+            err_hist, res_hist, u_curr = evaluate_case_on_sample(cfg, case, k_sample, f_sample, u_sample, x_nodes,)
 
             case_results[case["label"]]["errors"].append(err_hist)
             case_results[case["label"]]["residuals"].append(res_hist)

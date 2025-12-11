@@ -86,7 +86,7 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
 
     if save_after_train:
         file_name = os.path.basename(cfg.model_save_path)
-        cfg.model_save_path = os.path.join(ckpt_base, file_name)
+        cfg.model_save_path = os.path.join(ckpt_base, file_name + ".pt")
         cfg.loss_save_path = os.path.join(ckpt_base, file_name + "_loss.npz")
 
         # save the checkpoint
