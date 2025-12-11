@@ -7,8 +7,8 @@ problem:
   n_dim: 1                           # the dimension of the input of PDEs
   output_dim: 1                      # the dimension of the solutions
   grid_num: 200                      # Mesh size for unresolved problems
-  iteration: 600                     # the maximal iterations for the hybrid solver
-  tolerance: !!float 1e-10           # tolerance for residual of the hybrid solver
+  iteration: 2000                    # the maximal iterations for the hybrid solver
+  tolerance: !!float 1e-11           # tolerance for residual of the hybrid solver
 
 
 # =================================================================================
@@ -102,7 +102,7 @@ training:
   dynamic:                          # dynamic training settings (not used in static)
     horizon_size: 5                 # the num of future step in dynamic training framework
     curriculum:                     # curriculum learning
-      enabled: false                # true/True or false/False
+      enabled: true                 # true/True or false/False
       update_interval: 2000         # horizon++ for each update interval
 
 

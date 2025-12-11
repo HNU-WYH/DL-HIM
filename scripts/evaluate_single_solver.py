@@ -31,7 +31,7 @@ TOL: Optional[float] = None                            # by default using the va
 # Pre-registered model checkpoints (use the keys inside CASES)
 # If Default is None, will raise an error
 MODEL_PATHS: Dict[str, Optional[str]] = {
-    "Default": "checkpoints/diffusion1d/static_error_l2/diffusion_1D_Grid31_Ep20000_2025-12-11.pt",
+    "Default": "checkpoints/diffusion1d/static_residual_l2/diffusion_1D_Grid31_Ep20000_2025-12-11.pt",
     # "Others": "can specify other model path and use them in the CASES configuration "
 }
 
@@ -248,7 +248,7 @@ def evaluate_case_on_sample(base_cfg: Box, case: Dict,
         cp_path=cfg.get("model_load_path"),
     )
 
-    err_hist, res_hist, u_curr = collect_history(solver, u_gt_inner,
+    res_hist, err_hist, u_curr = collect_history(solver, u_gt_inner,
                                                  mode=case.get("mode", "hybrid"),
                                                  max_iter=max_iter, tol=tol,
                                                  one_shot=case.get("one_shot", False),
