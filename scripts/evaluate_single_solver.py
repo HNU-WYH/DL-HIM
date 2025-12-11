@@ -10,26 +10,29 @@ from box import Box
 from tqdm import tqdm
 
 from src.utils.visualization import plot_case_predictions
-from src.utils.stepin_utils import AndersonAcceleration
 from src.solver.hybrid_solver import HybridSolver
 from src.utils.fdm_utils import expand_solution
 from src.utils.cfg_util import load_config
 
 
+# In[]:
 # Pre-registered config for unresolved problem and testing data
 CONFIG_WILDCARD = "diffusion1d*"                       # config filename wildcard
-DATASET_PATH: Optional[str] = None                     # path to .npz training dataset; None -> config default
+
 TEST_GRID_NUM: Optional[int] = None                    # use dataset grid by default
-TEST_DATASET_PATH: Optional[str] = None                # path to .npz test dataset; None -> derive from the dataset path
-SAMPLE_INDICES: Sequence[int] = np.arange(10)                   # validation indices to evaluate
+TEST_DATASET_PATH: Optional[str] = None                # default: cfg["dataset_path"] + "_test.npz"
+
+SAMPLE_INDICES: Sequence[int] = np.arange(8)          # validation indices to evaluate
 PLOT_SAMPLE_INDICES: Optional[Sequence[int]] = [3, 5]  # indices in the testing data to visualize
 
+MAX_ITER: Optional[int] = None                         # Iteration / tolerance applied to every case
+TOL: Optional[float] = None                            # by default using the value in the yaml file
 
 # Pre-registered model checkpoints (use the keys inside CASES)
 # If Default is None, will raise an error
 MODEL_PATHS: Dict[str, Optional[str]] = {
     "Default": "checkpoints/diffusion1d/static_error_l2/diffusion_1D_Grid31_Ep20000_2025-12-11.pt",
-    "Others": "can specify other model path and use them in the CASES configuration "
+    # "Others": "can specify other model path and use them in the CASES configuration "
 }
 
 # Evaluation plan: each dict describes one curve on the plot
@@ -49,16 +52,11 @@ CASES: List[Dict] = [
     {"label": "Hybrid-CG",     "mode": "hybrid",    "model": "Default", "numerical_method": "jacobi", "hybrid_ratio": 20, "neural_update": "cg"},
 ]
 
-# Iteration / tolerance overrides applied to every case unless the case itself
-# provides its own values otherwise using the value in the yaml file
-MAX_ITER: Optional[int] = None
-TOL: Optional[float] = None
-
-
+# In[]:
 # =====================
 # Helper functions
 # =====================
-def load_evaluation_dataset(cfg: Box) -> Tuple[np.lib.npyio.NpzFile, bool]:
+def load_evaluation_dataset(cfg: Box, test_path = TEST_DATASET_PATH) -> Tuple[np.lib.npyio.NpzFile, bool]:
     """Load the preferred evaluation dataset.
 
     Returns
@@ -68,9 +66,8 @@ def load_evaluation_dataset(cfg: Box) -> Tuple[np.lib.npyio.NpzFile, bool]:
     use_test_dataset: bool
         Whether the returned dataset is the dedicated test set.
     """
-    dataset_path = DATASET_PATH or cfg["dataset_path"]
+    dataset_path = cfg["dataset_path"]
 
-    test_path = TEST_DATASET_PATH
     if test_path is None:
         base, ext = os.path.splitext(dataset_path)
         test_path = f"{base}_test{ext}"
@@ -112,19 +109,12 @@ def select_test_sample(grid_num: Optional[int], dataset,
         return k[0], f[0], x_after, u[0]
 
 
-def resolve_model_path(model_key: Optional[str]) -> Optional[str]:
+def resolve_model_path(model_key: Optional[str], model_paths = MODEL_PATHS) -> Optional[str]:
     if model_key is None:
         return None
-    if model_key not in MODEL_PATHS:
+    if model_key not in model_paths:
         raise KeyError(f"Model '{model_key}' not registered in MODEL_PATHS")
-    return MODEL_PATHS[model_key]
-
-
-def apply_global_overrides(cfg: Box) -> Box:
-    cfg = copy.deepcopy(cfg)
-    if DATASET_PATH:
-        cfg["dataset_path"] = DATASET_PATH
-    return cfg
+    return model_paths[model_key]
 
 
 def apply_case_overrides(base_cfg: Box, case: Dict,
@@ -190,7 +180,7 @@ def collect_history(solver: HybridSolver,
         u_pred = solver._neural_step(u_curr)
         residual = solver.compute_residual(u_pred)
         res_norm = float(np.linalg.norm(residual, ord=2))
-        err_norm = float(np.linalg.norm(u_pred - u_ref_inner, ord=2) / np.linalg.norm(u_ref_inner, ord=2))
+        err_norm = float(np.linalg.norm(u_pred - u_ref_inner, ord=2))
         return np.full(max_iter, res_norm, dtype=np.float32) , np.full(max_iter, err_norm, dtype=np.float32), u_pred
 
     # Initialize Anderson Acceleration if requested
@@ -227,7 +217,7 @@ def collect_history(solver: HybridSolver,
 
         res_vec = solver.compute_residual(u_next)
         res_norm = float(np.linalg.norm(res_vec, ord=2))
-        err_norm = float(np.linalg.norm(u_next - u_ref_inner, ord=2)/ np.linalg.norm(u_ref_inner, ord=2))
+        err_norm = float(np.linalg.norm(u_next - u_ref_inner, ord=2))
 
         residuals.append(res_norm)
         errors.append(err_norm)
@@ -242,11 +232,12 @@ def collect_history(solver: HybridSolver,
 def evaluate_case_on_sample(base_cfg: Box, case: Dict,
                             k_x: np.ndarray, f_inner: np.ndarray,
                             u_gt_inner: np.ndarray, x_nodes: np.ndarray,
+                            max_iter: int = MAX_ITER, tol: float = TOL
                             ) -> Tuple[np.ndarray, np.ndarray]:
 
     cfg = apply_case_overrides(base_cfg, case)
-    max_iter = case.get("max_iter") or MAX_ITER or cfg.problem.get("iteration", 200)
-    tol = case.get("tol") or TOL or cfg.problem.get("tolerance", 1e-10)
+    max_iter = max_iter or case.get("max_iter") or cfg.problem.get("iteration", 200)
+    tol = tol or case.get("tol") or cfg.problem.get("tolerance", 1e-10)
 
     solver = HybridSolver(
         cfg,
@@ -271,16 +262,21 @@ def average_histories(histories: Iterable[np.ndarray]) -> np.ndarray:
     return stacked.mean(axis=0)
 
 
-def run_evaluation(plot_indices: Optional[Sequence[int]] = None):
+def run_evaluation(plot_indices: Optional[Sequence[int]] = None,
+                   config_wildcard: str = CONFIG_WILDCARD,
+                   test_dataset_path: str = TEST_DATASET_PATH,
+                   sample_indices: Sequence[int] = SAMPLE_INDICES,
+                   test_grid_num: int = TEST_GRID_NUM, cases = CASES,
+                   ):
     # load config and overrides the validation dataset (act as testing if testing data is not provided)
-    cfg = apply_global_overrides(load_config(CONFIG_WILDCARD))
+    cfg = load_config(config_wildcard)
 
     # load data, if testing data path (training_path + "_test") exist, load testing data
-    data, use_test_dataset = load_evaluation_dataset(cfg)
+    data, use_test_dataset = load_evaluation_dataset(cfg, test_dataset_path)
 
     # If not providing the sample indices, using all data in validation/testing
     available_indices = list(range(len(data["k_data"] if use_test_dataset else data["k_data_val"])))
-    sample_indices = SAMPLE_INDICES if SAMPLE_INDICES is not None else available_indices
+    sample_indices = sample_indices if sample_indices is not None else available_indices
     if any(idx not in available_indices for idx in sample_indices):
         raise IndexError("Sample indices exceed available evaluation data")
 
@@ -290,18 +286,19 @@ def run_evaluation(plot_indices: Optional[Sequence[int]] = None):
         raise IndexError("Plot sample indices must be smaller than the validation indices")
 
     # get the unresolved testing data and corresponding reference solution
-    k_val, f_val, x_val, u_val = select_test_sample(TEST_GRID_NUM or len(data["x_data"]), data,
-                                                    sample_indices, use_test_dataset=use_test_dataset)
+    k_val, f_val, x_val, u_val = select_test_sample(grid_num=test_grid_num or len(data["x_data"]),
+                                                    dataset=data, test_sample_indices=sample_indices,
+                                                    use_test_dataset=use_test_dataset)
 
     # Initialize the result for loss, error and iters
-    case_results = {case["label"]: {"errors": [], "residuals": [], "iters": None} for case in CASES}
+    case_results = {case["label"]: {"errors": [], "residuals": [], "iters": None} for case in cases}
 
     # Initialize the prediction for plotting the results of selected indices under difference cases
     plot_predictions = {idx: {} for idx in plot_indices}
 
     # Evaluate every sample in the sampled indices
     for sample_idx, _ in enumerate(tqdm(sample_indices, desc="Samples")):
-        for case in CASES:
+        for case in cases:
             err_hist, res_hist, u_curr = evaluate_case_on_sample(cfg, case,
                                                                  k_val[sample_idx], f_val[sample_idx],
                                                                  u_val[sample_idx], x_val,
@@ -326,9 +323,9 @@ def run_evaluation(plot_indices: Optional[Sequence[int]] = None):
     plt.subplot(1, 2, 1)
     for label, vals in avg_results.items():
         plt.semilogy(vals["iter"], vals["error"], label=label)
-    plt.title("Average Relative Error vs Iteration")
+    plt.title("Average Error vs Iteration")
     plt.xlabel("Iteration")
-    plt.ylabel("Relative L2 Error")
+    plt.ylabel("Error L2 Norm")
     plt.grid(True)
     plt.legend()
 
@@ -337,7 +334,7 @@ def run_evaluation(plot_indices: Optional[Sequence[int]] = None):
         plt.semilogy(vals["iter"], vals["residual"], label=label)
     plt.title("Average Residual vs Iteration")
     plt.xlabel("Iteration")
-    plt.ylabel("Residual (L-inf)")
+    plt.ylabel("Residual L-2 Norm")
     plt.grid(True)
     plt.legend()
 
