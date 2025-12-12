@@ -6,10 +6,9 @@ problem:
   method: fdm                        # the numerical method to get training data, "fdm"
   n_dim: 1                           # the dimension of the input of PDEs
   output_dim: 1                      # the dimension of the solutions
-  grid_num: 200                      # Mesh size for unresolved problems
-  iteration: 2000                    # the maximal iterations for the hybrid solver
-  tolerance: !!float 1e-11           # tolerance for residual of the hybrid solver
-
+  iteration: 700                     # the maximal iterations for the hybrid solver
+  tolerance: !!float 1e-10           # tolerance for residual of the hybrid solver
+ # grid_num: 201                      # Mesh size for unresolved problems
 
 # =================================================================================
 # 2.1 Data generation configs (Generate Training & Testing Data for Neural Operator)
@@ -58,7 +57,7 @@ testing:
   redundancy: 1.0                    # placeholder, meaningful only for Helmholtz equations
 
   mesh:
-    grid_num: 201s                    # testing meshes differ from the training mesh such as [61, 241, 481]
+    grid_num: 201                    # testing meshes differ from the training mesh such as [61, 241, 481]
     grid_type: uniform               # default to the same as training; can be customized
   k_x:                               # keep the same generation setting as training by default
     generator: grf
@@ -70,7 +69,7 @@ testing:
     fixed_setting:
       value: 1.0
   f_x:
-    generator: [fixed, gaussian, grf]  # rhs generation types to mix for testing
+    generator: [grf, fixed, gaussian, ]  # rhs generation types to mix for testing
     gaussian_setting:                      # gaussian: f ~ N(0,1)
       standard: True                       # au: f = Au where u ~ N(0,1)
     fixed_setting:                         # fixed: f = 1

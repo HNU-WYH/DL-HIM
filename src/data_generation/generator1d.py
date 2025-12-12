@@ -223,7 +223,7 @@ class TestDataGenerator(DataGenerator1d):
         gen_setting = getattr(gen_cfg, gen_name+"_setting")
 
         # return: [B, N]
-        return function_generators[gen_name](self.x_nodes, self.redundant_func_num, **gen_setting)
+        return function_generators[gen_name](x_nodes = self.x_nodes, func_num = self.redundant_func_num, **gen_setting)
 
     def generate_data(self, force_gen = False, seed = None):
         if seed is not None:
@@ -238,9 +238,9 @@ class TestDataGenerator(DataGenerator1d):
         # 2. generate different types of f(x) based on k_base
         # shape of f(x) -> (4B, N)
         for rtype in self.rhs_types:
-            u_list, du_list, f_list, a_list, cond_list = [], [], [], [], []
+            k_list, u_list, du_list, f_list, a_list, cond_list = [], [], [], [], [], []
 
-            if rtype in ["fixed", "gaussian",  "grf"]:
+            if rtype in ["fixed", "gaussian", "grf"]:
                 f_cfg = self.testing_cfg.f_x
                 f_setting = getattr(f_cfg, rtype + "_setting", {})
                 f_batch = function_generators[rtype](self.x_nodes, self.redundant_func_num, **f_setting)
@@ -260,6 +260,7 @@ class TestDataGenerator(DataGenerator1d):
                     u_list.append(solution['u_inner'])                              # [N-2, ]
                     du_list.append(solution['du_inner'])                            # [N-2, ]
                     f_list.append(solution['f_inner'])                              # [N-2, ]
+                    k_list.append(k_curr)                                           # [N, ]
                     a_list.append(A_inner)                                          # [N-2, N-2]
                     cond_list.append(np.linalg.cond(A_inner))
 
@@ -283,12 +284,13 @@ class TestDataGenerator(DataGenerator1d):
                     u_list.append(u_inner)
                     du_list.append(du_inner)
                     f_list.append(f_inner)
+                    k_list.append(k_curr)
                     a_list.append(A_inner)
                     cond_list.append(np.linalg.cond(A_inner))
             else:
                 raise ValueError(f"Unsupported rhs type: {rtype}, only gaussian, fixed, grf, au are supported")
 
-            all_k.append(k_base)
+            all_k.append(np.stack(k_list))
             all_u.append(np.stack(u_list))
             all_du.append(np.stack(du_list))
             all_f.append(np.stack(f_list))

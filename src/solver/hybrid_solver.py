@@ -27,8 +27,8 @@ class HybridSolver:
         self.config = cfg
 
         self.eps = float(eps)
-        self.k_x = np.asarray(k_x, dtype=np.float32)
-        self.f_x = np.asarray(f_x, dtype=np.float32)
+        self.k_x = np.asarray(k_x, dtype=np.float64)
+        self.f_x = np.asarray(f_x, dtype=np.float64)
         self.solver_type = cfg.solver.get("type", "Hybrid").lower()
 
         self.don_x_nodes = np.asarray(don_x_nodes) if don_x_nodes is not None \
@@ -152,14 +152,14 @@ class HybridSolver:
 
         # Initialize solution
         if u_init is None:
-            u_curr = np.zeros(len(self.prob_x_nodes) - 2, dtype=np.float32)            # (new grid point - 2,)
+            u_curr = np.zeros(len(self.prob_x_nodes) - 2, dtype=np.float64)            # (new grid point - 2,)
 
         else:
             # error checking (if include boundary)
             if len(u_init) == len(self.prob_x_nodes):
-                u_curr = np.asarray(u_init, dtype=np.float32)[self.inner_slice]               # (delete boundary condition)
+                u_curr = np.asarray(u_init, dtype=np.float64)[self.inner_slice]               # (delete boundary condition)
             elif len(u_init) == len(self.prob_x_nodes) - 2:
-                u_curr = np.asarray(u_init, dtype=np.float32)
+                u_curr = np.asarray(u_init, dtype=np.float64)
             else:
                 raise ValueError("The shape of initial solution is not compatible")
 
@@ -179,6 +179,8 @@ class HybridSolver:
             # 1. Choose the Strategy
             if mode == "numerical":
                 u_next = self._numerical_step(u_curr)
+                if aa is not None:
+                    u_next = u_curr + aa.compute(u_curr, u_next)
 
             elif mode == "deeponet":
                 u_next = self._neural_step(u_curr)
@@ -188,15 +190,12 @@ class HybridSolver:
                     u_next = self._numerical_step(u_curr)
                 else:
                     u_next = self._neural_step(u_curr)
+                    if aa:
+                        u_next = u_curr + aa.compute(u_curr, u_next)
             else:
                 raise ValueError(f"Unknown mode: {mode}")
 
-            # 2. Anderson Acceleration (Optional)
-            # u_next = G(u_curr)
-            if aa and not numerical_update:
-                u_next = u_curr + aa.compute(u_curr, u_next)
-
-            # 3. Convergence Checking
+            # 2. Convergence Checking
             current_res = self.compute_residual(u_next)
             res_norm = np.linalg.norm(current_res, ord=np.inf)
 

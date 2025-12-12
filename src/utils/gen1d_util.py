@@ -84,8 +84,9 @@ def grf_generate(x_nodes, func_num, sigma, l0, mean=0.0, minimal=None, **kwargs)
     r_square = (x_nodes - x_nodes[:, None])**2    # (x_num, x_num)
     covariance_matrix = np.zeros((x_num, x_num))  # (x_num, x_num)
 
-    if minimal is not None:
-        func_num = 6 * func_num
+    target_num = func_num  # cache desired batch size
+    sample_multiplier = 2 if minimal is not None else 1
+
     # if not isinstance(sigma_0, list):
     #     sigma_0 = [sigma_0]
     # if not isinstance(l_0, list):
@@ -94,17 +95,28 @@ def grf_generate(x_nodes, func_num, sigma, l0, mean=0.0, minimal=None, **kwargs)
     assert len(sigma) == len(l0)
     if sigma == [0]:
         # if sigma_0 = 0，then returns all 0
-        return np.zeros((func_num, x_num))        # (func_num, x_num)
+        return np.zeros((target_num, x_num))[:func_num]                                 # (func_num, x_num)
 
     for idx, l in enumerate(l0):
         s = sigma[idx]
-        covariance_matrix += (s ** 2) * np.exp(- r_square / (2 * l ** 2))     # (x_num, x_num)
+        covariance_matrix += (s ** 2) * np.exp(- r_square / (2 * l ** 2))               # (x_num, x_num)
 
     mean = mean * np.ones_like(x_nodes)  # (x_num,)
-    grfs = np.random.multivariate_normal(mean, covariance_matrix, func_num)   # (func_num, x_num)
-    if minimal is not None:
-        grfs = grfs[np.where(np.min(grfs, axis=1) > minimal)][:func_num]
 
+    grfs_list = []
+    collected = 0
+    while collected < target_num:
+        sample_size = sample_multiplier * (target_num - collected)
+        samples = np.random.multivariate_normal(mean, covariance_matrix, sample_size)   # (sample_size, x_num)
+        if minimal is not None:
+            samples = samples[np.min(samples, axis=1) > minimal]
+        if len(samples) == 0:
+            continue
+
+        grfs_list.append(samples)
+        collected += len(samples)
+
+    grfs = np.vstack(grfs_list)[:target_num]
     return grfs
 
 

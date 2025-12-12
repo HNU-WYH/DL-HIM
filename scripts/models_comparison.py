@@ -19,8 +19,8 @@ CHECKPOINT_ROOT = "checkpoints/diffusion1d"
 TEST_GRID_NUM: Optional[int] = None                    # if not equal, interpolate to uniformly spaced TEST_GRID_NUM
 TEST_DATASET_PATH: Optional[str] = None                # path to .npz test dataset; None -> derive from the dataset path
 
-SAMPLE_INDICES: Optional[Iterable[int]] = np.arange(8)
-PLOT_SAMPLE_INDICES: Optional[Iterable[int]] = [3, 5]
+SAMPLE_INDICES: Optional[Iterable[int]] = None
+PLOT_SAMPLE_INDICES: Optional[Iterable[int]] = [1]
 
 MAX_ITER: Optional[int] = None                         # Iteration / tolerance applied to every case
 TOL: Optional[float] = None                            # by default using the value in the yaml file
@@ -42,7 +42,7 @@ def discover_checkpoints(root: str = CHECKPOINT_ROOT) -> List[Tuple[str, str]]:
             candidate_path = os.path.join(family_path, candidate)
             if candidate_path.endswith(".pt"):
                 # label = os.path.join(family, candidate)
-                checkpoint_pairs.append((family, candidate_path))
+                checkpoint_pairs.append((family[:], candidate_path))
     return checkpoint_pairs
 
 
@@ -106,8 +106,8 @@ def compare_checkpoints(
             case_results[case["label"]]["residuals"].append(res_hist)
             case_results[case["label"]]["iters"] = np.arange(1, len(err_hist) + 1)
 
-            if sample_indices[dataset_idx] in plot_indices:
-                plot_predictions[sample_indices[dataset_idx]][case["label"]] = {
+            if dataset_idx in plot_indices:
+                plot_predictions[dataset_idx][case["label"]] = {
                     "u_true": u_sample,
                     "u_pred": u_curr,
                     "x_nodes": x_nodes[1:-1],
@@ -145,5 +145,31 @@ def compare_checkpoints(
     if plot_predictions:
         plot_case_predictions(plot_predictions)
 
+    return avg_results
+
 if __name__ == "__main__":
-    compare_checkpoints(plot_indices=PLOT_SAMPLE_INDICES)
+    avg_results3 = compare_checkpoints(plot_indices=PLOT_SAMPLE_INDICES)
+
+    plt.figure(figsize=(6, 3))
+    # plt.subplot(1, 2, 1)
+    # for label, vals in avg_results.items():
+    #     plt.semilogy(vals["iter"], vals["error"], label=label)
+    # plt.title("Error vs Iteration (dataset average)")
+    # plt.xlabel("Iteration")
+    # plt.ylabel("L2 Error Norm")
+    # plt.grid(True)
+    # plt.legend()
+
+    # plt.subplot(1, 2, 2)
+    for label, vals in avg_results3.items():
+        label_list = label.split("_")
+        label = " ".join(label_list[:])
+        plt.semilogy(vals["iter"], vals["residual"], label=label)
+    plt.title("Average Residual Norm vs Iteration")
+    plt.xlabel("DL-HIM Iteration")
+    plt.ylabel(r"$\ell_2$ Norm of Residual")
+    plt.grid(True)
+    plt.legend(ncol=2)
+
+    plt.tight_layout()
+    plt.show()

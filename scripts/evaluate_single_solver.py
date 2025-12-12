@@ -22,8 +22,8 @@ CONFIG_WILDCARD = "diffusion1d*"                       # config filename wildcar
 TEST_GRID_NUM: Optional[int] = None                    # use dataset grid by default
 TEST_DATASET_PATH: Optional[str] = None                # default: cfg["dataset_path"] + "_test.npz"
 
-SAMPLE_INDICES: Sequence[int] = np.arange(8)          # validation indices to evaluate
-PLOT_SAMPLE_INDICES: Optional[Sequence[int]] = [3, 5]  # indices in the testing data to visualize
+SAMPLE_INDICES: Sequence[int] = None                   # validation indices to evaluate
+PLOT_SAMPLE_INDICES: Optional[Sequence[int]] = None  # indices in the testing data to visualize
 
 MAX_ITER: Optional[int] = None                         # Iteration / tolerance applied to every case
 TOL: Optional[float] = None                            # by default using the value in the yaml file
@@ -31,25 +31,25 @@ TOL: Optional[float] = None                            # by default using the va
 # Pre-registered model checkpoints (use the keys inside CASES)
 # If Default is None, will raise an error
 MODEL_PATHS: Dict[str, Optional[str]] = {
-    "Default": "checkpoints/diffusion1d/static_residual_l2/diffusion_1D_Grid31_Ep20000_2025-12-11.pt",
+    "Default": "checkpoints/diffusion1d/dynamic_residual_h1_cur/diffusion_1D_Grid31_Ep20000_2025-12-11.pt",
     # "Others": "can specify other model path and use them in the CASES configuration "
 }
 
 # Evaluation plan: each dict describes one curve on the plot
 CASES: List[Dict] = [
-    {"label": "Pure-DeepONet", "mode": "neural",    "model": "Default", "one_shot": True},
+    # {"label": "Pure-DeepONet", "mode": "neural",    "model": "Default", "one_shot": True},
 
-    {"label": "Gauss-Seidel",  "mode": "numerical", "model": None,  "numerical_method": "gauss-seidel"},
+    # {"label": "Gauss-Seidel",  "mode": "numerical", "model": None,  "numerical_method": "gauss-seidel"},
 
     {"label": "Jacobi",        "mode": "numerical", "model": None,      "numerical_method": "jacobi"},
 
-    {"label": "Jacobi-AA",     "mode": "numerical", "model": None,      "numerical_method": "jacobi", "neural_update": "aa", "aa_m": 15},
+    {"label": "Jacobi-AA",     "mode": "numerical", "model": None,      "numerical_method": "jacobi", "neural_update": "aa", "aa_m": 10},
 
     {"label": "Hybrid-fixed",  "mode": "hybrid",    "model": "Default", "numerical_method": "jacobi", "hybrid_ratio": 20, "neural_update": "fixed"},
 
-    {"label": "Hybrid-AA",     "mode": "hybrid",    "model": "Default", "numerical_method": "jacobi", "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 15},
+    {"label": "Hybrid-AA",     "mode": "hybrid",    "model": "Default", "numerical_method": "jacobi", "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 10},
 
-    {"label": "Hybrid-CG",     "mode": "hybrid",    "model": "Default", "numerical_method": "jacobi", "hybrid_ratio": 20, "neural_update": "cg"},
+    {"label": "Hybrid-Adaptive",  "mode": "hybrid",    "model": "Default", "numerical_method": "jacobi", "hybrid_ratio": 20, "neural_update": "cg"},
 ]
 
 # In[]:
@@ -78,10 +78,11 @@ def load_evaluation_dataset(cfg: Box, test_path = TEST_DATASET_PATH) -> Tuple[np
     return np.load(dataset_path), False
 
 
+# 这个进行了大概记得改回来
 def select_test_sample(grid_num: Optional[int], dataset,
                        test_sample_indices: List[int] = None,
                        use_test_dataset: bool = False):
-    if not isinstance(test_sample_indices, list):
+    if np.isscalar(test_sample_indices):
         return_list = False
         test_sample_indices = [test_sample_indices]
     else:
@@ -95,8 +96,13 @@ def select_test_sample(grid_num: Optional[int], dataset,
     k = dataset[k_key][test_sample_indices]
     f = dataset[f_key][test_sample_indices]
     u = dataset[u_key][test_sample_indices]
+    # a_mats = dataset["a_mats"][test_sample_indices]
+    # res = np.mean(f - (a_mats @ u[...,None]).squeeze(-1))
 
-    x_after = np.linspace(0, 1, grid_num) if grid_num else x_before
+    if grid_num is None:
+        x_after = x_before
+    else:
+        x_after = np.linspace(0, 1, grid_num)
 
     if grid_num and len(x_before) != len(x_after):
         k = [np.interp(x_after, x_before, k[i]) for i in range(k.shape[0])]
@@ -158,9 +164,9 @@ def pad_series(values: List[float], target_len: int) -> np.ndarray:
     if not values:
         return np.zeros(target_len)
     if len(values) >= target_len:
-        return np.asarray(values[:target_len], dtype=np.float32)
+        return np.asarray(values[:target_len], dtype=np.float64)
     pad_val = values[-1]
-    padded = np.full(target_len, pad_val, dtype=np.float32)
+    padded = np.full(target_len, pad_val, dtype=np.float64)
     padded[: len(values)] = values
     return padded
 
@@ -174,14 +180,15 @@ def collect_history(solver: HybridSolver,
                     aa_m: Optional[int] = None,
                     ) -> Tuple[np.ndarray, np.ndarray]:
     mode = mode.lower()
-    u_curr = np.zeros_like(u_ref_inner, dtype=np.float32)
+    # u_ref_inner = solver.u_inner
+    u_curr = np.zeros_like(u_ref_inner, dtype=np.float64)
 
     if one_shot:
         u_pred = solver._neural_step(u_curr)
         residual = solver.compute_residual(u_pred)
         res_norm = float(np.linalg.norm(residual, ord=2))
         err_norm = float(np.linalg.norm(u_pred - u_ref_inner, ord=2))
-        return np.full(max_iter, res_norm, dtype=np.float32) , np.full(max_iter, err_norm, dtype=np.float32), u_pred
+        return np.full(max_iter, res_norm, dtype=np.float64) , np.full(max_iter, err_norm, dtype=np.float64), u_pred
 
     # Initialize Anderson Acceleration if requested
     aa = None
@@ -208,6 +215,8 @@ def collect_history(solver: HybridSolver,
         elif mode == "hybrid":
             if numerical_update:
                 u_next = solver._numerical_step(u_curr)
+                # if aa:
+                #     u_next = u_curr + aa.compute(u_curr, u_next)
             else:
                 u_next = solver._neural_step(u_curr)
                 if aa:
@@ -243,7 +252,7 @@ def evaluate_case_on_sample(base_cfg: Box, case: Dict,
         cfg,
         k_x=k_x,
         f_x=expand_solution(f_inner),
-        eps=cfg.data.get("eps", 1.0),
+        eps=cfg.testing.get("eps", 1.0),
         prob_x_nodes=x_nodes,
         cp_path=cfg.get("model_load_path"),
     )
@@ -286,7 +295,7 @@ def run_evaluation(plot_indices: Optional[Sequence[int]] = None,
         raise IndexError("Plot sample indices must be smaller than the validation indices")
 
     # get the unresolved testing data and corresponding reference solution
-    k_val, f_val, x_val, u_val = select_test_sample(grid_num=test_grid_num or len(data["x_data"]),
+    k_val, f_val, x_val, u_val = select_test_sample(grid_num=test_grid_num,
                                                     dataset=data, test_sample_indices=sample_indices,
                                                     use_test_dataset=use_test_dataset)
 
@@ -344,6 +353,26 @@ def run_evaluation(plot_indices: Optional[Sequence[int]] = None,
     if plot_predictions:
         plot_case_predictions(plot_predictions)
 
+    return avg_results
 
 if __name__ == "__main__":
-    run_evaluation(plot_indices=PLOT_SAMPLE_INDICES)
+    avg_results = run_evaluation(plot_indices=PLOT_SAMPLE_INDICES)
+
+    plt.figure(figsize=(6, 3.8))
+    for label, vals in avg_results.items():
+        if label == "Hybrid-CG":
+            label = "Hybrid-Adaptive"
+        plt.semilogy(vals["iter"], vals["residual"], label=label)
+    plt.title("Average Residual Norm vs Iteration")
+    plt.xlabel("DL-HIM Iteration")
+    plt.ylabel("$\ell_2$ Norm of Residual")
+    plt.grid(True)
+    plt.legend(
+        loc='upper center',  # 图例自己的对齐点（上边缘居中）
+        bbox_to_anchor=(0.5, -0.2),  # 图例相对于坐标轴的位置 (x=0.5居中, y=-0.15在轴下方)
+        ncol=3,  # 设置列数，建议设为3或5，让图例横向排列更美观
+        frameon=True  # 是否显示图例边框
+    )
+
+    plt.tight_layout()
+    plt.show()
