@@ -11,7 +11,7 @@ problem:
  # grid_num: 201                      # Mesh size for unresolved problems
 
 # =================================================================================
-# 2.1 Data generation configs (Generate Training & Testing Data for Neural Operator)
+# 2.1 Data generation configs (Generate Training & Validation Data for Neural Operator)
 # =================================================================================
 data:                                # The setting of mesh in training data
   func_num: 10000                    # the count of data in the overall dataset (including training and validating)
@@ -97,6 +97,10 @@ training:
 
   don_setting:                      # configs for DeepONet/MIONet (Meaningless for FNS)
     f_dim: 80                       # the dimension for output of branch_net & trunk_net
+
+  fns_setting:
+    act: "gelu"
+    hidden: 32
 
   dynamic:                          # dynamic training settings (not used in static)
     horizon_size: 5                 # the num of future step in dynamic training framework
