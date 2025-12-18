@@ -10,9 +10,9 @@ class Helmholtz1D:
     def __init__(self, x_nodes, k_x, f_x, mat_type="sparse", **kwargs):
         """
         Args:
-            x_nodes: uniform / non-uniform grid in [0,1]  shape: (n,)
-            k_x: parameter function                       shape: (n,) or (1,)
-            f_x: rhs function                             shape: (n,)
+            x_nodes: uniform / non-uniform grid in [0,1]  shape: (n, )
+            k_x: parameter function                       shape: (n, ) or (1,)
+            f_x: rhs function                             shape: (n, )
             mat_type: "sparse" or "dense"
         """
         self.x = np.asarray(x_nodes, dtype=float)

@@ -2,6 +2,10 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 import matplotlib.pyplot as plt
+
+
+import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 import time
 
 

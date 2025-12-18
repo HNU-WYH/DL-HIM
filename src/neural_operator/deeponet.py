@@ -182,7 +182,7 @@ class DeepONet1d(NeuralOperatorBase):
             u = u_norm
 
             if self.hard_constraints:
-                H_x = self.hard_constraints(query_points).squeeze(-1)       # (G-2, )
+                H_x = self.hard_constraints(query_points).squeeze(-1)        # (G-2, )
                 u = u_norm * H_x                                             # Apply hard constraints
 
             if batch_size == 1:

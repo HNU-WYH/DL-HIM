@@ -188,6 +188,8 @@ class HybridSolver:
             elif mode == "hybrid":
                 if numerical_update:
                     u_next = self._numerical_step(u_curr)
+                    # if aa:
+                    #     u_next = u_curr + aa.compute(u_curr, u_next)
                 else:
                     u_next = self._neural_step(u_curr)
                     if aa:
