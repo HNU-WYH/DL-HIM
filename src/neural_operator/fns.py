@@ -35,7 +35,7 @@ class FNS1d(NeuralOperatorBase):
         self.meta3 = MetaT1D(4, 1, act=act)
 
         # Initialize Sub-networks (Meta-λ)
-        self.meta_lambda = UNet1D(act=act, hidden = 32)
+        self.meta_lambda = UNet1D(act=act, hidden=32)
 
         self.to(self.device)
 
@@ -63,7 +63,7 @@ class FNS1d(NeuralOperatorBase):
         return r_ext
 
     @staticmethod
-    def ik2_id(self, M: int, device, dtype) -> torch.Tensor:
+    def ik2_id(M: int, device, dtype) -> torch.Tensor:
         L = 2 * (M + 1)
 
         # 对于偶数的DFT, 一般习惯 [-L/2, L/2 - 1], 需要周期性, 因此不能对称
@@ -134,7 +134,7 @@ class FNS1d(NeuralOperatorBase):
 
         # 2. Prepare Residual (Odd Extension)
         # f_x represents the residual 'r' on interior points
-        rsym = self.odd_extension_1d(f_x)  # [B, 1, L_ext]
+        rsym = self.odd_extension(f_x)  # [B, 1, L_ext]
         B, _, L_ext = rsym.shape
         M = f_x.shape[-1]
 
@@ -150,14 +150,15 @@ class FNS1d(NeuralOperatorBase):
         # 4. FFT Pipeline
         # 4.1 Define low frequency indices and Physical Prior for Diffusion
         start, end = L_ext//2-L_ext//4, L_ext//2+L_ext//4+1
-        ik2 = self.ik2_id(M, rsym.device, rsym.dtype)[:,:,start:end]
+        ik2 = self.ik2_id(M, rsym.device, rsym.dtype)[:, :, start:end]
 
         # 4.2 IFFT the residual
         r_hat = torch.fft.ifft(rsym, dim=-1)                             # FFT, freq = 0 is in idx = 0
-        r_hat = torch.fft.fftshift(r_hat, dim=-1)[:,:,start:end]         # move to center, and use center only
+        r_hat = torch.fft.fftshift(r_hat, dim=-1)[:, :, start:end]         # move to center, and use center only
 
         # 4.3 Handling the eigenvalues
         r_hat = self.transition(r_hat, [W1, W2, W3])
+        weights_theta = weights_theta[:, :, start:end]
         out_hat = r_hat * weights_theta * ik2
         out_hat = self.transition(
             x_hat=out_hat, Ws=[W3.transpose(1, 2).flip(-1).conj(),
@@ -175,20 +176,20 @@ class FNS1d(NeuralOperatorBase):
         u_pred = u_pred.squeeze(1)
 
 
-        # TODO: 这里需要保持兼容 | 并且修改一下梯度生成的逻辑 (和deeponet一起)
-        # TODO: deeponet计算residual的梯度那个逻辑是有误的
-        # Gradient computation (Numerical or Autograd) could be added here if needed
-        # For now, returning None unless explicitly implemented similar to DeepONet
-        # Optional: Compute derivatives/residuals if required by trainer (e.g. for loss)
+        # # TODO: 这里需要保持兼容 | 并且修改一下梯度生成的逻辑 (和deeponet一起)
+        # # TODO: deeponet计算residual的梯度那个逻辑是有误的
+        # # Gradient computation (Numerical or Autograd) could be added here if needed
+        # # For now, returning None unless explicitly implemented similar to DeepONet
+        # # Optional: Compute derivatives/residuals if required by trainer (e.g. for loss)
         res, du_pred, dres = None, None, None
-
-        # FNS usually doesn't need to compute its own 'res' inside forward
-        # because f_x IS the residual, but for consistency with trainer's compute_loss:
-        if self.require_res and a_mats is not None:
-            # Be careful: In dynamic training, f_x is residual, so u_pred is correction.
-            # This logical branch might need adjustment based on specific trainer usage,
-            # but keeping standard interface implementation:
-            res = (f_x.squeeze(1)[..., None] - a_mats @ u_pred[..., None]).squeeze(-1)
+        #
+        # # FNS usually doesn't need to compute its own 'res' inside forward
+        # # because f_x IS the residual, but for consistency with trainer's compute_loss:
+        # if self.require_res and a_mats is not None:
+        #     # Be careful: In dynamic training, f_x is residual, so u_pred is correction.
+        #     # This logical branch might need adjustment based on specific trainer usage,
+        #     # but keeping standard interface implementation:
+        #     res = (f_x.squeeze(1)[..., None] - a_mats @ u_pred[..., None]).squeeze(-1)
 
         return {
             "u_pred": u_pred,
@@ -227,9 +228,9 @@ class MetaT1D(nn.Module):
         self.cnn = nn.Sequential(
             nn.Conv1d(1, 8, 5, padding=2),
             getActivationFunction(act),
-            nn.Conv2d(8, 16, 5, padding=2),
+            nn.Conv1d(8, 16, 5, padding=2),
             getActivationFunction(act),
-            nn.Conv2d(16, 32, 5, padding=2),
+            nn.Conv1d(16, 32, 5, padding=2),
             getActivationFunction(act),
             nn.AdaptiveAvgPool1d(pool),
         )
@@ -277,45 +278,45 @@ class UNet1D(nn.Module):
     U-Net based Meta-Network to generate spectral filter weights \theta.
     """
 
-    def __init__(self, act="gelu", base=32):
+    def __init__(self, act="gelu", hidden=32):
         super().__init__()
         self.act = act
 
         self.in_conv = nn.Sequential(
-            nn.Conv1d(1, base, 5, padding=2),
+            nn.Conv1d(1, hidden, 5, padding=2),
             getActivationFunction(act),
-            ResBlock1D(base, act),
+            ResBlock1D(hidden, act),
         )
 
         self.down1 = nn.Sequential(
-            nn.Conv1d(base, base * 2, 5, stride=2, padding=2),
-            nn.BatchNorm1d(base * 2),
+            nn.Conv1d(hidden, hidden * 2, 5, stride=2, padding=2),
+            nn.BatchNorm1d(hidden * 2),
             getActivationFunction(act),
         )
 
         self.down2 = nn.Sequential(
-            nn.Conv1d(base * 2, base * 4, 5, stride=2, padding=2),
-            nn.BatchNorm1d(base * 4),
+            nn.Conv1d(hidden * 2, hidden * 4, 5, stride=2, padding=2),
+            nn.BatchNorm1d(hidden * 4),
             getActivationFunction(act),
         )
 
         self.mid = nn.Sequential(
-            ResBlock1D(base * 4, act),
-            ResBlock1D(base * 4, act),
+            ResBlock1D(hidden * 4, act),
+            ResBlock1D(hidden * 4, act),
         )
 
         self.up2 = nn.Sequential(
             getActivationFunction(act),
-            nn.ConvTranspose1d(base * 4, base * 2, 4, stride=2, padding=1),
-            nn.BatchNorm1d(base * 2),
+            nn.ConvTranspose1d(hidden * 4, hidden * 2, 4, stride=2, padding=1),
+            nn.BatchNorm1d(hidden * 2),
         )
         self.up1 = nn.Sequential(
             getActivationFunction(act),
-            nn.ConvTranspose1d(base * 2, base, 4, stride=2, padding=1),
-            nn.BatchNorm1d(base),
+            nn.ConvTranspose1d(hidden * 2, hidden, 4, stride=2, padding=1),
+            nn.BatchNorm1d(hidden),
         )
 
-        self.out_conv = nn.Conv1d(base, 1, 1)
+        self.out_conv = nn.Conv1d(hidden, 1, 1)
 
     def forward(self, coef_signal: torch.Tensor, Lfft: int) -> torch.Tensor:
         """

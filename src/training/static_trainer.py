@@ -184,6 +184,7 @@ class StaticTrainer:
         plt.figure(figsize=(8, 5))
         plt.plot(epochs, self.train_losses, label="Train Loss")
         plt.plot(epochs, self.val_losses, label="Validation Loss")
+        plt.yscale("log")
         plt.xlabel("Epoch")
         plt.ylabel("Loss")
         plt.title("Training and Validation Loss")

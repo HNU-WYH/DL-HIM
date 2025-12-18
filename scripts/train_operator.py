@@ -13,13 +13,13 @@ DATASET_PATH = None               # path to .npz dataset; None -> config default
 LOSS_NORM = None                  # "l1", "l2", or "h1"; None -> config default
 LOSS_TYPE = None                  # "error" or "residual"; None -> config default
 SAVE_AFTER_TRAIN = True           # whether save the trained neural operator model
-
+PRINT_INTERVAL = 100              # Interval of printing; DeepONet recommend 1000, FNS recommend 100;
 
 def apply_training_overrides(cfg: Box,
                              loss_type=LOSS_TYPE,
-                             loss_norm = LOSS_NORM,
+                             loss_norm=LOSS_NORM,
                              dataset_path=DATASET_PATH,
-                             trainer_type = TRAINER_TYPE,
+                             trainer_type=TRAINER_TYPE,
                              ):
     if trainer_type is not None:
         cfg.training.mode = trainer_type
@@ -36,15 +36,15 @@ def apply_training_overrides(cfg: Box,
     return cfg
 
 
-def select_trainer(model, trainer_type: str = TRAINER_TYPE, save_path = None):
+def select_trainer(model, trainer_type: str = TRAINER_TYPE, save_path=None, print_interval=PRINT_INTERVAL):
     """Return the proper trainer object based on the configuration."""
     trainer_type = trainer_type.lower()
 
     if trainer_type == "dynamic":
-        return DynamicTrainer(model, plot_save_dir=save_path)
+        return DynamicTrainer(model, plot_save_dir=save_path, print_interval=print_interval)
 
     if trainer_type == "static":
-        return StaticTrainer(model, plot_save_dir=save_path)
+        return StaticTrainer(model, plot_save_dir=save_path, print_interval=print_interval)
 
     raise ValueError(f"Trainer type {trainer_type} not supported")
 
@@ -60,10 +60,11 @@ def ckpt_dir(cfg: Box):
 
 def train_operator(config_wildcard=CONFIG_WILDCARD,
                    loss_type=LOSS_TYPE,
-                   loss_norm = LOSS_NORM,
+                   loss_norm=LOSS_NORM,
                    dataset_path=DATASET_PATH,
-                   trainer_type = TRAINER_TYPE,
-                   save_after_train = SAVE_AFTER_TRAIN
+                   trainer_type=TRAINER_TYPE,
+                   save_after_train=SAVE_AFTER_TRAIN,
+                   print_interval=PRINT_INTERVAL,
                    ):
     """Train a DeepONet model according to the given configuration"""
     cfg = load_config(config_wildcard)
@@ -74,7 +75,7 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
     os.makedirs(ckpt_base, exist_ok=True)
 
     model = create_no(cfg)
-    trainer = select_trainer(model, trainer_type, save_path=ckpt_base)
+    trainer = select_trainer(model, trainer_type, save_path=ckpt_base, print_interval=print_interval)
     dataset = np.load(cfg.dataset_path, allow_pickle=True)
 
     trainer.load_dataset(dataset)
@@ -99,12 +100,13 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
         print(f"Model and Loss saved to {os.path.dirname(cfg.model_save_path)}")
 
 
-def batch_train(trainer_types=("dynamic",),
-                loss_types=("error", "residual", ),
-                loss_norms=("l2", "h1", "l1"),
+def batch_train(trainer_types=("dynamic", "static"),
+                loss_types=("error", "residual"),
+                loss_norms=("l2", "l1"),
                 config_wildcard=CONFIG_WILDCARD,
                 dataset_path=DATASET_PATH,
                 save_after_train=SAVE_AFTER_TRAIN,
+                print_interval=PRINT_INTERVAL,
                 ):
     """
     Checkpoints will be saved under:
@@ -126,6 +128,7 @@ def batch_train(trainer_types=("dynamic",),
                                dataset_path=dataset_path,
                                trainer_type=trainer_type,
                                save_after_train=save_after_train,
+                               print_interval=print_interval,
                 )
 
 
