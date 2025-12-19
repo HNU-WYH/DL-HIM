@@ -94,6 +94,8 @@ training:
     type: Residual                  # the type of loss function (Residual, Error)
     norm: l2                        # norm type ("l1“, "l2", "h1")
     grad_alpha: 0.1                 # weight for gradient term
+    use_autograd: false             # for static trainer: True -> use model-provided du; False -> FD
+                                    # for dynamic trainer: True/False -> FD
 
   don_setting:                      # configs for DeepONet/MIONet (Meaningless for FNS)
     f_dim: 80                       # the dimension for output of branch_net & trunk_net

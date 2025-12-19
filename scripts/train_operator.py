@@ -13,7 +13,7 @@ DATASET_PATH = None               # path to .npz dataset; None -> config default
 LOSS_NORM = None                  # "l1", "l2", or "h1"; None -> config default
 LOSS_TYPE = None                  # "error" or "residual"; None -> config default
 SAVE_AFTER_TRAIN = True           # whether save the trained neural operator model
-PRINT_INTERVAL = 100              # Interval of printing; DeepONet recommend 1000, FNS recommend 100;
+PRINT_INTERVAL = 1000              # Interval of printing; DeepONet recommend 1000, FNS recommend 100;
 
 def apply_training_overrides(cfg: Box,
                              loss_type=LOSS_TYPE,
@@ -100,9 +100,9 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
         print(f"Model and Loss saved to {os.path.dirname(cfg.model_save_path)}")
 
 
-def batch_train(trainer_types=("dynamic", "static"),
+def batch_train(trainer_types=("dynamic",),
                 loss_types=("error", "residual"),
-                loss_norms=("l2", "l1"),
+                loss_norms=("h1",),
                 config_wildcard=CONFIG_WILDCARD,
                 dataset_path=DATASET_PATH,
                 save_after_train=SAVE_AFTER_TRAIN,

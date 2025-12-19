@@ -18,13 +18,20 @@ class StaticTrainer:
                  plot_save_dir: Optional[str] = None,):
 
         self.model = model
-        self.device = self.model.config.device
+        self.device = self.model.device
         self.epochs = self.model.config.training.num_epoch
         self.batch_size = self.model.config.training.batch_size
 
         self.alpha = self.model.config.training.loss.grad_alpha
         self.loss_type = self.model.config.training.loss.type.lower()
         self.loss_norm = self.model.config.training.loss.norm.lower()
+
+        # whether A_mats/du_red is required in trainer
+        self.need_A = self.loss_type == "residual"
+        self.need_du_true = self.loss_type == "error" and self.loss_norm == "h1"
+
+        # whether compute gradient of solution inside the trainer by Finite Difference
+        self.compute_du_pred = self.need_du_true and self.use_autograd
 
         self.print_interval = print_interval
         self.plot_interval = plot_interval
@@ -58,13 +65,13 @@ class StaticTrainer:
         self.model.k_mean.fill_(k_mean_val.item())
         self.model.k_sigma.fill_(k_std_val.item())
 
-        if self.model.require_res:
+        if self.need_A:
             self.a_mats_train = torch.tensor(dataset["a_mats_train"], dtype=torch.float32, device=self.device)
             self.a_mats_val = torch.tensor(dataset["a_mats_val"], dtype=torch.float32, device=self.device)
         else:
             self.a_mats_train, self.a_mats_val = None, None
 
-        if self.model.require_du:
+        if self.need_du_true:
             self.du_val = torch.tensor(dataset["du_data_val"], dtype=torch.float32, device=self.device)
             self.du_train = torch.tensor(dataset["du_data_train"], dtype=torch.float32, device=self.device)
         else:
@@ -112,12 +119,24 @@ class StaticTrainer:
             f_batch = self.f_train[batch_idx]
             u_batch = self.u_train[batch_idx]
 
-            du_batch = self.du_train[batch_idx] if self.model.require_du else None
-            a_mats_batch = self.a_mats_train[batch_idx] if self.model.require_res else None
+            du_batch = self.du_train[batch_idx] if self.need_du_true else None
+            a_mats_batch = self.a_mats_train[batch_idx] if self.need_A else None
 
             # 前向传播
-            pred_dict = self.model(k_x=k_batch, f_x=f_batch, a_mats=a_mats_batch)
-            loss = self.compute_loss(u_true=u_batch, du_true=du_batch, **pred_dict)
+            pred_dict = self.model(k_x=k_batch, f_x=f_batch, a_mats=a_mats_batch,
+                                   compute_du=self.compute_du_pred)
+            u_pred = pred_dict["u_pred"]
+            du_pred = self._get_du_pred(u_pred, pred_dict, self.x_nodes[1:-1])
+
+            res, dres = None, None
+            if self.loss_type == "residual":
+                res = self._compute_residual(a_mats=a_mats_batch, f_batch=f_batch, u_pred=u_pred)
+                if self.loss_norm == "h1":
+                    dres = self._grad_fd(res, x_nodes=self.x_nodes[1:-1])
+
+            loss = self.compute_loss(u_pred=u_pred, u_true=u_batch,
+                                     du_pred=du_pred, du_true=du_batch,
+                                     res=res, dres=dres)
 
             # 反向传播并优化
             self.optimizer.zero_grad()
@@ -197,3 +216,43 @@ class StaticTrainer:
         plt.savefig(fig_path, dpi=150)
         plt.close()
 
+    def _get_du_pred(self, u_pred: torch.Tensor, pred_dict: dict, x_nodes: Optional[torch.Tensor] = None) -> \
+    Optional[torch.Tensor]:
+        """
+        Choose du_pred from model output when available and requested; otherwise fall back to FD.
+        """
+        if self.loss_type != "error" or self.loss_norm != "h1":
+            return None
+
+        if self.use_autograd:
+            model_du = pred_dict.get("du_pred", None)
+            if model_du is not None:
+                return model_du
+
+        return self._grad_fd(u_pred, x_nodes=x_nodes)
+
+    @staticmethod
+    def _compute_residual(a_mats: torch.Tensor, f_batch: torch.Tensor, u_pred: torch.Tensor) -> torch.Tensor:
+        """
+        params:
+            a_mats: [B, N-2, N-2];
+            f_batch: [B, N-2];
+            u_pred: [B, N-2];
+        """
+        if a_mats is None:
+            raise ValueError("a_mats is required to compute residual in residual loss mode.")
+        return f_batch - torch.einsum("bnm,bm->bn", a_mats, u_pred)
+
+    def _grad_fd(self, func: torch.Tensor, x_nodes: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """
+        Central difference gradient using torch.gradient support batches.
+        params:
+         func: [B, N-2]
+         x_nodes: [N-2,] (interior nodes)
+        """
+        if x_nodes is not None:
+            x_nodes = torch.as_tensor(x_nodes, dtype=torch.float32, device=self.device)
+        else:
+            x_nodes = self.x_nodes[1:-1]
+
+        return torch.gradient(input=func, spacing=(x_nodes,), dim=1)[0]

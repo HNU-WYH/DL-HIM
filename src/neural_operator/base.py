@@ -22,22 +22,10 @@ class NeuralOperatorBase(torch.nn.Module):
         # Required in the design of loss computation
         self.loss_type = config.training.loss.type.lower()
         self.loss_norm = config.training.loss.norm.lower()
-        self.require_res, self.require_du, self.require_dres = False, False, False
+        self.use_autograd = config.training.loss.get("use_autograd", False)
 
         # whether to compute gradient of solution
-        if self.loss_type == "error":
-            if self.loss_norm == "h1":
-                warn("when compute gradient, no hard constraints should be applied")
-                self.require_du = True
-
-        # whether to compute residual or gradient of residual
-        elif self.loss_type == "residual":
-            self.require_res = True
-            if self.loss_norm == "h1":
-                warn("when compute gradient, no hard constraints should be applied")
-                self.require_dres, self.require_du = True, True
-
-        else:
+        if self.loss_type not in {"error", "residual"}:
             raise ValueError(f"Unsupported loss type: {self.loss_type}")
 
     def save_model(self, save_path=None):

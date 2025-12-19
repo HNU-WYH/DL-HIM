@@ -112,11 +112,12 @@ class FNS1d(NeuralOperatorBase):
         yi = group_conv(xr, wi) + group_conv(xi, wr)
         return torch.complex(yr, yi)
 
-    def forward(self, k_x, f_x, a_mats = None, **kwargs):
+    def forward(self, k_x, f_x, a_mats=None, compute_du: bool = False, **kwargs):
         """
         :param k_x: [B, N_grid-2].
         :param f_x: [B, N_grid-2] (Interior points).
         :param a_mats: Not used in FNS forward pass, kept for interface compatibility.
+        :param compute_du: whether to compute the gradient of solution inside the model
         :return: dict with "u_pred" (the correction).
         """
         # Input shape handling to match meta-net requirements
@@ -175,27 +176,9 @@ class FNS1d(NeuralOperatorBase):
         u_pred = e_full[:, :, :M]  # [B, 1, M]
         u_pred = u_pred.squeeze(1)
 
-
-        # # TODO: 这里需要保持兼容 | 并且修改一下梯度生成的逻辑 (和deeponet一起)
-        # # TODO: deeponet计算residual的梯度那个逻辑是有误的
-        # # Gradient computation (Numerical or Autograd) could be added here if needed
-        # # For now, returning None unless explicitly implemented similar to DeepONet
-        # # Optional: Compute derivatives/residuals if required by trainer (e.g. for loss)
-        res, du_pred, dres = None, None, None
-        #
-        # # FNS usually doesn't need to compute its own 'res' inside forward
-        # # because f_x IS the residual, but for consistency with trainer's compute_loss:
-        # if self.require_res and a_mats is not None:
-        #     # Be careful: In dynamic training, f_x is residual, so u_pred is correction.
-        #     # This logical branch might need adjustment based on specific trainer usage,
-        #     # but keeping standard interface implementation:
-        #     res = (f_x.squeeze(1)[..., None] - a_mats @ u_pred[..., None]).squeeze(-1)
-
         return {
             "u_pred": u_pred,
-            "res": res,
-            "du_pred": du_pred,
-            "dres": dres
+            "du_pred": None,
         }
 
     def predict(self, k_x: np.ndarray, f_x: np.ndarray,

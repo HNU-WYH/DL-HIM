@@ -20,9 +20,7 @@ class DynamicTrainer:
         # Initialization
         self.model = model
         self.device = self.model.device
-
-        # # the a_mats and residual computing are required in the dynamic setting
-        self.model.require_res = self.model.require_du = self.model.require_dres = False
+        self.use_autograd = self.model.config.training.loss.get("use_autograd", False)
 
         # training hyperparameters
         self.epochs = self.model.config.training.num_epoch
@@ -43,6 +41,9 @@ class DynamicTrainer:
         solver_cfg = self.model.config.solver
         self.update_ratio = solver_cfg.hybrid.get("update_ratio", 20)
         self.relax_factor = solver_cfg.numerical.get("relaxation_factor", 0.6)
+
+        # whether to load the reference gradient for solution
+        self.need_du_true = self.loss_type == "error" and self.loss_norm == "h1"
 
         # print and visualization setting
         self.print_interval = print_interval
@@ -84,8 +85,11 @@ class DynamicTrainer:
         self.model.k_mean.fill_(k_mean_val.item())
         self.model.k_sigma.fill_(k_std_val.item())
 
-        self.du_val = torch.tensor(dataset["du_data_val"], dtype=torch.float32, device=self.device)
-        self.du_train = torch.tensor(dataset["du_data_train"], dtype=torch.float32, device=self.device)
+        if self.need_du_true:
+            self.du_val = torch.tensor(dataset["du_data_val"], dtype=torch.float32, device=self.device)
+            self.du_train = torch.tensor(dataset["du_data_train"], dtype=torch.float32, device=self.device)
+        else:
+            self.du_val = self.du_train = None
 
     @staticmethod
     def _residual_compute(A_batch:torch.Tensor, f_batch:torch.Tensor, u_batch:torch.Tensor):
@@ -142,7 +146,7 @@ class DynamicTrainer:
 
         return torch.stack(u_seq),torch.stack(res_seq)
 
-    def _compute_du(self, batch_func: torch.Tensor, x_nodes: Optional[torch.Tensor] = None):
+    def _grad_fd(self, batch_func: torch.Tensor, x_nodes: Optional[torch.Tensor] = None):
         """
         params:
             batch_func: [S, B, N-2,] or list/tuple of [B, N-2] tensors;
@@ -187,7 +191,7 @@ class DynamicTrainer:
             elif self.loss_norm == "l1":
                 loss = torch.nn.functional.l1_loss(u_seq, u_true)
             elif self.loss_norm == "h1":
-                du_seq = self._compute_du(u_seq)
+                du_seq = self._grad_fd(u_seq, x_nodes=self.x_nodes[1:-1])
                 loss = torch.nn.functional.mse_loss(u_seq, u_true) + \
                     self.alpha * torch.nn.functional.mse_loss(du_seq, du_true)
             else:
@@ -199,7 +203,7 @@ class DynamicTrainer:
             elif self.loss_norm == "l1":
                 loss = torch.mean(torch.abs(res_seq))
             elif self.loss_norm == "h1":
-                dres_seq = self._compute_du(res_seq)
+                dres_seq = self._grad_fd(res_seq, x_nodes=self.x_nodes[1:-1])
                 loss = torch.mean(torch.pow(res_seq, 2)) + self.alpha * torch.mean(torch.pow(dres_seq, 2))
             else:
                 raise NotImplementedError("Unknown norm type for the residual loss.")
@@ -228,7 +232,7 @@ class DynamicTrainer:
             A_batch = self.a_mats_train[batch_idx]
 
             u_true = self.u_train[batch_idx]
-            du_true = self.du_train[batch_idx]
+            du_true = self.du_train[batch_idx] if self.need_du_true else None
 
             u_seq, res_seq = self._hybrid_rollout(A_batch=A_batch, f_batch=f_batch, k_batch=k_batch,
                                                   u_curr=None, horizon=self.current_horizon)
@@ -243,20 +247,7 @@ class DynamicTrainer:
         return epoch_loss / data_size
 
     def val_epoch(self):
-        #TODO: 这个逻辑有一点奇怪, 没法跟static保持一致
-        # 对于dynamic而言, 我们用autograd算出来的 du, 是对于输入给NO的residual对应的correction e_i的梯度
-        # 这个梯度和外界solver的梯度不是完全一致的. d( u_i + e_i - u^\star)
-        # 我们不能用autograd算梯度, 或者至少应该做一下处理, 比如 de_i (autograd) + du_i(previous step) - du_val 才合理
-        # 在这个程序实现里, 我们使用了中心差分来算grad, 所以我们的对于require_du, require_res, require_dres的判断标准发生了很大的改变
-        # 至少我们算dres不需要a_mats了. 直接用res中心差分算就完了
-
-        #TODO: 由于上面的问题, 我认为不要把model.require_du之类的放在model里面
-        # 应该在trainer里面自己来判断需要load哪种data, 以及怎么样train
-        # 对于NO, 那么则是设置bool 变量, 你要告诉no, 我到底需不需要你autograd出来的du和dres
-        # 而不是根据require_du, require_dres什么的来判断, 我认为这个逻辑需要放在trainer里面
-        # 同理static trainer也需要更改,来保持统一
-
-        # 对于validation而言, 我们就不做dynamic 展开了, 直接预测
+        # 对于validation而言, 我们就不做dynamic 展开了, 直接看一下sole operator的表现
         self.model.eval()
         with torch.no_grad():
             pred_dict = self.model(k_x=self.k_val, f_x=self.f_val, a_mats=self.a_mats_val)

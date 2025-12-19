@@ -73,12 +73,14 @@ class DeepONet1d(NeuralOperatorBase):
         branch_in = torch.concat([k_norm, f_norm], dim=1)
         return branch_in, f_norm_factor
 
-    def forward(self, k_x, f_x, a_mats=None, trunk_input=None, **kwargs):
+    def forward(self, k_x, f_x, a_mats=None, trunk_input=None, compute_du: bool = False, **kwargs):
         """
             :param k_x: e.g. shape = [func num, don grid points]
             :param f_x: e.g. shape = [func num, don grid points - 2]
             :param trunk_input: e.g. shape = [query points, n dim] (query points = don grid points - 2)
             :param a_mats: e.g. shape = [func num, don grid points - 2, don grid points - 2]
+            :param compute_res: whether compute the residual inside the model
+            :param compute_du: whether compute the gradient of solution inside the model
             :return: u_pred, res, du_pred, dres
         """
         if k_x.ndim == self.n_dim:
@@ -115,11 +117,12 @@ class DeepONet1d(NeuralOperatorBase):
         H_x = self.hard_constraints(trunk_input).squeeze(-1)  # (num_x-2)
         u_pred = u_norm * H_x  # (B, num_x-2) * (num_x-2) -> (B, num_x-2)
 
-        res, du_pred, dres = None, None, None
-        if self.require_res and a_mats is not None:
-            res = self.compute_residual(a_mats, f_x, u_pred)
+        # res = None
+        # if compute_res and a_mats is not None:
+        #     res = self.compute_residual(a_mats, f_x, u_pred)
 
-        if self.require_du:
+        du_pred = None
+        if compute_du:
             jvp = self._compute_jvp(trunk_input)      # (num_x-2, f_dim)
             du_norm = (branch_out @ jvp.T) * f_norm   # (B, num_x-2)
 
@@ -127,14 +130,9 @@ class DeepONet1d(NeuralOperatorBase):
             dH_x = 1.0 - 2.0 * x_coords               # (numx-2, )
             du_pred = du_norm * H_x + u_norm * dH_x   # (B, num_x-2)
 
-            if self.require_dres and a_mats is not None:
-                dres = (-a_mats @ du_pred[..., None]).squeeze(-1)  # (B, num_x-2, num_x-2) @ (B, num_x-2, 1)
-
         return {
             "u_pred": u_pred,
-            "res": res,
             "du_pred": du_pred,
-            "dres": dres
         }
 
     def predict(self, k_x: np.ndarray, f_x: np.ndarray,
