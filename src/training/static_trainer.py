@@ -30,7 +30,8 @@ class StaticTrainer:
         self.need_A = self.loss_type == "residual"
         self.need_du_true = self.loss_type == "error" and self.loss_norm == "h1"
 
-        # whether compute gradient of solution inside the trainer by Finite Difference
+        # whether compute gradient of solution inside the model by autograd
+        self.use_autograd = getattr(self.model, "use_autograd", False)
         self.compute_du_pred = self.need_du_true and self.use_autograd
 
         self.print_interval = print_interval
@@ -251,7 +252,7 @@ class StaticTrainer:
          x_nodes: [N-2,] (interior nodes)
         """
         if x_nodes is not None:
-            x_nodes = torch.as_tensor(x_nodes, dtype=torch.float32, device=self.device)
+            x_nodes = torch.as_tensor(x_nodes, dtype=func.dtype, device=self.device)
         else:
             x_nodes = self.x_nodes[1:-1]
 

@@ -23,7 +23,7 @@ class FNS1d(NeuralOperatorBase):
         self.fns_num_x_nodes = config.data.mesh.grid_num
         self.fns_x_nodes_np = generate_x_nodes(grid_type=config.data.mesh.grid_type, num_points=self.fns_num_x_nodes)
         self.register_buffer("fns_x_nodes_torch",
-                             torch.tensor(self.fns_x_nodes_np[1:-1, None], dtype=torch.float32, device= self.device))
+                             torch.tensor(self.fns_x_nodes_np[1:-1, None], dtype=torch.float32, device=self.device))
 
         # Normalization buffers
         self.register_buffer("k_mean", torch.zeros(1, dtype=torch.float32, device= self.device))
@@ -114,7 +114,7 @@ class FNS1d(NeuralOperatorBase):
 
     def forward(self, k_x, f_x, a_mats=None, compute_du: bool = False, **kwargs):
         """
-        :param k_x: [B, N_grid-2].
+        :param k_x: [B, N_grid].
         :param f_x: [B, N_grid-2] (Interior points).
         :param a_mats: Not used in FNS forward pass, kept for interface compatibility.
         :param compute_du: whether to compute the gradient of solution inside the model
@@ -122,10 +122,10 @@ class FNS1d(NeuralOperatorBase):
         """
         # Input shape handling to match meta-net requirements
         if k_x.ndim == 1: k_x = k_x[None, :]      # [B, N]
-        if f_x.ndim == 1: f_x = f_x[None, :]      # [B, N]
+        if f_x.ndim == 1: f_x = f_x[None, :]      # [B, N-2]
 
         if k_x.ndim == 2: k_x = k_x.unsqueeze(1)  # [B, 1, N]
-        if f_x.ndim == 2: f_x = f_x.unsqueeze(1)  # [B, 1, M]
+        if f_x.ndim == 2: f_x = f_x.unsqueeze(1)  # [B, 1, N-2]
 
         k_x = k_x.to(self.device)
         f_x = f_x.to(self.device)
@@ -184,7 +184,40 @@ class FNS1d(NeuralOperatorBase):
     def predict(self, k_x: np.ndarray, f_x: np.ndarray,
                 x_k: np.ndarray = None, x_f: np.ndarray = None,
                 **kwargs):
-        pass
+        """
+            Minimal prediction entry point: calls forward() directly.
+
+            Required shapes (interior-only):
+              - k_x: (B, N_full)
+              - f_x: (B, N_int)
+
+            Dtypes:
+              - k_x: float32/float64 (internally you may normalize / cast)
+              - f_x: float32/float64
+
+            Returns:
+              - same dict as forward(), e.g. {"u_pred": (B, N_int), "du_pred": None, ...}
+        """
+        if isinstance(k_x, np.ndarray):
+            k_x = torch.as_tensor(k_x, dtype=torch.float32, device=self.device)
+        if isinstance(f_x, np.ndarray):
+            f_x = torch.as_tensor(f_x, dtype= torch.float32, device=self.device)
+
+        # Accept (N_int,) and promote to (1, N_int)
+        if k_x.dim() == 1:
+            k_x = k_x.unsqueeze(0)
+        if f_x.dim() == 1:
+            f_x = f_x.unsqueeze(0)
+
+        if k_x.dim() != 2 or f_x.dim() != 2:
+            raise ValueError(f"Expected 2D tensors (B, N_int). Got k_x {k_x.shape}, f_x {f_x.shape}")
+
+        if k_x.shape[0] != f_x.shape[0]:
+            raise ValueError(f"k_x and f_x must have the same batch size. Got {k_x.shape[0]} vs {f_x.shape[0]}")
+
+        self.eval()
+        with torch.no_grad():
+            return self.forward(k_x, f_x, **kwargs)["u_pred"].squeeze().cpu().detach().numpy()
 
 
 def getActivationFunction(act: str):
@@ -306,6 +339,7 @@ class UNet1D(nn.Module):
         coef_signal: [B, 1, Lc] real
         Lfft: Target length in frequency domain
         """
+        # mapping from L to L_ext
         x0 = self.in_conv(coef_signal)
         x0 = F.interpolate(x0, size=Lfft, mode='linear', align_corners=True)
 

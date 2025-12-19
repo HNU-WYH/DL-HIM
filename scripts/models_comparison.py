@@ -20,7 +20,7 @@ TEST_GRID_NUM: Optional[int] = None                    # if not equal, interpola
 TEST_DATASET_PATH: Optional[str] = None                # path to .npz test dataset; None -> derive from the dataset path
 
 SAMPLE_INDICES: Optional[Iterable[int]] = None
-PLOT_SAMPLE_INDICES: Optional[Iterable[int]] = [1]
+PLOT_SAMPLE_INDICES: Optional[Iterable[int]] = None
 
 MAX_ITER: Optional[int] = None                         # Iteration / tolerance applied to every case
 TOL: Optional[float] = None                            # by default using the value in the yaml file
@@ -53,7 +53,7 @@ def build_case(label: str, model_path: str) -> Dict:
         "numerical_method": "jacobi",
         "hybrid_ratio": 20,
         "neural_update": "fixed",
-        "aa_m": 15,
+        "aa_m": 10,
         "model_path": model_path,
     }
 
@@ -152,14 +152,14 @@ if __name__ == "__main__":
 
     plt.figure(figsize=(6, 3))
     # plt.subplot(1, 2, 1)
-    # for label, vals in avg_results.items():
+    # for label, vals in avg_results3.items():
     #     plt.semilogy(vals["iter"], vals["error"], label=label)
     # plt.title("Error vs Iteration (dataset average)")
     # plt.xlabel("Iteration")
     # plt.ylabel("L2 Error Norm")
     # plt.grid(True)
     # plt.legend()
-
+    #
     # plt.subplot(1, 2, 2)
     for label, vals in avg_results3.items():
         label_list = label.split("_")

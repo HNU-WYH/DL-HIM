@@ -22,7 +22,7 @@ CONFIG_WILDCARD = "diffusion1d*"                       # config filename wildcar
 TEST_GRID_NUM: Optional[int] = None                    # use dataset grid by default
 TEST_DATASET_PATH: Optional[str] = None                # default: cfg["dataset_path"] + "_test.npz"
 
-SAMPLE_INDICES: Sequence[int] = np.arange(10)                   # validation indices to evaluate
+SAMPLE_INDICES: Sequence[int] = None                  # validation indices to evaluate
 PLOT_SAMPLE_INDICES: Optional[Sequence[int]] = None  # indices in the testing data to visualize
 
 MAX_ITER: Optional[int] = None                         # Iteration / tolerance applied to every case
@@ -31,7 +31,8 @@ TOL: Optional[float] = None                            # by default using the va
 # Pre-registered model checkpoints (use the keys inside CASES)
 # If Default is None, will raise an error
 MODEL_PATHS: Dict[str, Optional[str]] = {
-    "Default": "checkpoints/diffusion1d/dynamic_residual_h1_cur/diffusion_1D_Grid31_Ep20000_2025-12-11.pt",
+    "Default": "checkpoints/diffusion1d/dynamic_error_l2/diffusion_1D_Grid31_Ep10000_2025-12-19.pt",
+    # "Default": "checkpoints/DeepONet_diffusion1d/dynamic_residual_h1_cur/diffusion_1D_Grid31_Ep20000_2025-12-11.pt",
     # "Others": "can specify other model path and use them in the CASES configuration "
 }
 
@@ -39,18 +40,19 @@ MODEL_PATHS: Dict[str, Optional[str]] = {
 CASES: List[Dict] = [
     # {"label": "Pure-DeepONet", "mode": "neural",    "model": "Default", "one_shot": True},
 
-    # {"label": "Gauss-Seidel",  "mode": "numerical", "model": None,  "numerical_method": "gauss-seidel"},
+    {"label": "Gauss-Seidel", "mode": "numerical", "model": None, "numerical_method": "gauss-seidel"},
 
-    # {"label": "Jacobi",        "mode": "numerical", "model": None,      "numerical_method": "jacobi"},
+    {"label": "Jacobi", "mode": "numerical", "model": None, "numerical_method": "jacobi"},
 
-    {"label": "Jacobi-AA",     "mode": "numerical", "model": None,      "numerical_method": "jacobi", "neural_update": "aa", "aa_m":10},
+    {"label": "Jacobi-AA", "mode": "numerical", "model": None, "numerical_method": "jacobi", "neural_update": "aa", "aa_m": 10},
 
-    {"label": "Hybrid-fixed",  "mode": "hybrid",    "model": "Default", "numerical_method": "jacobi", "hybrid_ratio": 20, "neural_update": "fixed"},
+    {"label": "Hybrid-fixed", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi", "hybrid_ratio": 20, "neural_update": "fixed"},
 
-    {"label": "Hybrid-AA",     "mode": "hybrid",    "model": "Default", "numerical_method": "jacobi", "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 10},
+    {"label": "Hybrid-AA", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi", "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 10},
 
-    # {"label": "Hybrid-Adaptive",  "mode": "hybrid",    "model": "Default", "numerical_method": "jacobi", "hybrid_ratio": 20, "neural_update": "cg"},
+    {"label": "Hybrid-Adaptive", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi", "hybrid_ratio": 20, "neural_update": "cg"},
 ]
+
 
 # In[]:
 # =====================
@@ -215,13 +217,10 @@ def collect_history(solver: HybridSolver,
         elif mode == "hybrid":
             if numerical_update:
                 u_next = solver._numerical_step(u_curr)
-
-
             else:
                 u_next = solver._neural_step(u_curr)
                 if aa:
                     u_next = u_curr + aa.compute(u_curr, u_next)
-
 
         else:
             raise ValueError(f"Unknown mode: {mode}")
@@ -277,7 +276,7 @@ def run_evaluation(plot_indices: Optional[Sequence[int]] = None,
                    config_wildcard: str = CONFIG_WILDCARD,
                    test_dataset_path: str = TEST_DATASET_PATH,
                    sample_indices: Sequence[int] = SAMPLE_INDICES,
-                   test_grid_num: int = TEST_GRID_NUM, cases = CASES,
+                   test_grid_num: int = TEST_GRID_NUM, cases=CASES,
                    ):
     # load config and overrides the validation dataset (act as testing if testing data is not provided)
     cfg = load_config(config_wildcard)
@@ -357,24 +356,25 @@ def run_evaluation(plot_indices: Optional[Sequence[int]] = None,
 
     return avg_results
 
+
 if __name__ == "__main__":
-    avg_results = run_evaluation(plot_indices=PLOT_SAMPLE_INDICES)
+    avg_results3 = run_evaluation(plot_indices=PLOT_SAMPLE_INDICES)
     #
-    # plt.figure(figsize=(6, 3.8))
-    # for label, vals in avg_results.items():
-    #     if label == "Hybrid-CG":
-    #         label = "Hybrid-Adaptive"
-    #     plt.semilogy(vals["iter"], vals["residual"], label=label)
-    # plt.title("Average Residual Norm vs Iteration")
-    # plt.xlabel("DL-HIM Iteration")
-    # plt.ylabel("$\ell_2$ Norm of Residual")
-    # plt.grid(True)
-    # plt.legend(
-    #     loc='upper center',  # 图例自己的对齐点（上边缘居中）
-    #     bbox_to_anchor=(0.5, -0.2),  # 图例相对于坐标轴的位置 (x=0.5居中, y=-0.15在轴下方)
-    #     ncol=3,  # 设置列数，建议设为3或5，让图例横向排列更美观
-    #     frameon=True  # 是否显示图例边框
-    # )
-    #
-    # plt.tight_layout()
-    # plt.show()
+    plt.figure(figsize=(6, 3.8))
+    for label, vals in avg_results3.items():
+        if label == "Hybrid-CG":
+            label = "Hybrid-Adaptive"
+        plt.semilogy(vals["iter"], vals["residual"], label=label)
+    plt.title("Average Residual Norm vs Iteration")
+    plt.xlabel("DL-HIM Iteration")
+    plt.ylabel("$\ell_2$ Norm of Residual")
+    plt.grid(True)
+    plt.legend(
+        loc='upper center',  # 图例自己的对齐点（上边缘居中）
+        bbox_to_anchor=(0.5, -0.2),  # 图例相对于坐标轴的位置 (x=0.5居中, y=-0.15在轴下方)
+        ncol=3,  # 设置列数，建议设为3或5，让图例横向排列更美观
+        frameon=True  # 是否显示图例边框
+    )
+
+    plt.tight_layout()
+    plt.show()
