@@ -169,11 +169,11 @@ def plot_case_predictions(plot_predictions: Dict[int, Dict[str, Dict[str, np.nda
         for label, results in pred.items():
             # Solution Plotting
             ax_pred, ax_err = axes[row_idx]
-            ax_pred.plot(results["x_nodes"], results["u_pred"], label=label + f":{results["error"]:.2e}")
+            ax_pred.plot(results["x_nodes"], results["u_pred"], label=label + f":{results['error']:.2e}")
 
             # Error Plotting
             error = results["u_pred"] - results["u_true"]
-            ax_err.plot(results["x_nodes"], error, label=label + f":{results["error"]:.2e}")
+            ax_err.plot(results["x_nodes"], error, label=label + f":{results['error']:.2e}")
 
         # finish the solution plotting
         ax_pred.plot(results["x_nodes"], results["u_true"], label="True", color="black", linewidth=2)

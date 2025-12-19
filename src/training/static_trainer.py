@@ -31,8 +31,8 @@ class StaticTrainer:
         self.plot_save_dir = plot_save_dir
 
         self.train_losses, self.val_losses = [], []
-        self.k_val, self.f_val, self.u_val, self.du_val, self.a_mats_val = None, None, None, None, None
-        self.k_train, self.f_train, self.u_train, self.du_train, self.a_mats_train = None, None, None, None, None
+        self.k_train = self.f_train = self.u_train = self.du_train = self.a_mats_train = None
+        self.x_nodes = self.k_val = self.f_val = self.u_val = self.du_val = self.a_mats_val = None
 
         self.optimizer = torch.optim.Adam(
             self.model.parameters(),
@@ -41,6 +41,9 @@ class StaticTrainer:
         )
 
     def load_dataset(self, dataset):
+        # load coordinates of x
+        self.x_nodes = torch.tensor(dataset["x_data"], dtype=torch.float32, device=self.device)
+
         self.k_train = torch.tensor(dataset["k_data_train"], dtype=torch.float32, device=self.device)
         self.f_train = torch.tensor(dataset["f_data_train"], dtype=torch.float32, device=self.device)
         self.u_train = torch.tensor(dataset["u_data_train"], dtype=torch.float32, device=self.device)
@@ -165,7 +168,7 @@ class StaticTrainer:
         if (epoch % self.plot_interval == 0) or (epoch == self.epochs - 1):
             val_pred = val_pred.detach().cpu().numpy()
             plot_test_samples(epoch_index=epoch + 1,
-                              x_nodes=self.model.don_x_nodes_np[1:-1],
+                              x_nodes=self.x_nodes[1:-1],
                               u_test_pred=val_pred,
                               u_test=self.u_val.detach().cpu().numpy(),
                               out_dir=os.path.join(self.plot_save_dir, "sole_operator"),

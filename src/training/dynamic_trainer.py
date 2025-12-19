@@ -351,6 +351,7 @@ class DynamicTrainer:
         plt.figure(figsize=(8, 5))
         plt.plot(epochs, np.array(self.train_losses), label="Train Loss")
         plt.plot(epochs, np.array(self.val_losses), label="Validation Loss")
+        plt.yscale("log")
         plt.xlabel("Epoch")
         plt.ylabel("Loss")
         plt.title("Training and Validation Loss")
