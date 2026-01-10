@@ -96,6 +96,131 @@ class AndersonAcceleration:
     def __bool__(self):
         return True
 
+
+class AndersonMixing:
+    """
+    Pure Type-II Anderson / mixing on physical residual r = b - A x.
+
+    Input each step:
+      - g_k: proposal point (e.g., output of hybrid solver)
+      - r_k: physical residual at proposal point: r_k = b - A g_k
+
+    Output:
+      - u_next = u_AA (no damping, no line search)
+      - r_next = r(u_AA) computed WITHOUT direct matvec: r_next = r_k - ΔR γ
+
+    Notes:
+      - Works as "no extra matvec" only for linear residual r(u)=b-Au.
+      - You may still want restart criteria later; currently kept minimal.
+    """
+    def __init__(self, m=5, reg=1e-13):
+        self.m = m
+        self.reg = reg
+
+        # history of solutions and residuals
+        self.hist_g = []
+        self.hist_r = []
+
+        # history of differences
+        self.hist_diff_g = []  # Δg
+        self.hist_diff_r = []  # Δr
+
+    def compute(self, g_k: np.ndarray, r_k: np.ndarray):
+        """
+        Parameters
+        ----------
+        g_k : np.ndarray
+            proposal point, same shape as solution
+        r_k : np.ndarray
+            physical residual at g_k, same shape as solution
+
+        Returns
+        -------
+        u_next : np.ndarray
+            accelerated point (u_AA)
+        r_next : np.ndarray
+            residual at u_next computed without matvec
+        info : dict
+            diagnostics
+        """
+        ori_size = g_k.shape
+
+        # flatten to [B, F]
+        if g_k.ndim == 1:
+            g = g_k[None, :]
+            r = r_k[None, :]
+        else:
+            B = g_k.shape[0]
+            g = g_k.reshape(B, -1)
+            r = r_k.reshape(B, -1)
+
+        # first item: nothing to accelerate yet
+        if len(self.hist_g) == 0:
+            self.hist_g.append(g)
+            self.hist_r.append(r)
+            info = {"used_AA": False, "m_used": 0}
+            return g_k, r_k, info
+
+        # differences to last proposal
+        delta_g = g - self.hist_g[-1]
+        delta_r = r - self.hist_r[-1]
+
+        # store current
+        self.hist_g.append(g)
+        self.hist_r.append(r)
+        self.hist_diff_g.append(delta_g)
+        self.hist_diff_r.append(delta_r)
+
+        # keep only last m diffs (=> m+1 points)
+        current_m = len(self.hist_diff_r)
+        if current_m > self.m:
+            self.hist_g.pop(0)
+            self.hist_r.pop(0)
+            self.hist_diff_g.pop(0)
+            self.hist_diff_r.pop(0)
+            current_m -= 1
+
+        # build ΔR and ΔG: [B, F, m]
+        Mat_DR = np.stack(self.hist_diff_r, axis=-1)  # ΔR
+        Mat_DG = np.stack(self.hist_diff_g, axis=-1)  # ΔG
+        Mat_DR_T = Mat_DR.transpose(0, 2, 1)          # [B, m, F]
+
+        # Solve ridge LS:
+        #   γ = argmin ||ΔR γ - r_k||^2 + reg ||γ||^2
+        # => (ΔR^T ΔR + reg I) γ = ΔR^T r_k
+        H = Mat_DR_T @ Mat_DR + self.reg * np.eye(current_m)
+        rhs = Mat_DR_T @ r[..., None]
+        gamma = np.linalg.solve(H, rhs)  # [B, m, 1]
+
+        # Type-II update:
+        # u_AA = g_k - ΔG γ
+        u_AA = g - (Mat_DG @ gamma).squeeze(-1)  # [B, F]
+
+        # No-matvec residual reuse:
+        # r_AA = r(g_k) - ΔR γ
+        r_AA = r - (Mat_DR @ gamma).squeeze(-1)  # [B, F]
+
+        # reshape back
+        if g_k.ndim == 1:
+            u_out = u_AA.reshape(ori_size)
+            r_out = r_AA.reshape(ori_size)
+        else:
+            u_out = u_AA.reshape(ori_size)
+            r_out = r_AA.reshape(ori_size)
+
+        info = {
+            "used_AA": True,
+            "m_used": current_m,
+            "gamma_norm": float(np.linalg.norm(gamma)),
+        }
+        return u_out, r_out, info
+
+    def reset(self):
+        self.hist_g = []
+        self.hist_r = []
+        self.hist_diff_g = []
+        self.hist_diff_r = []
+
 def adaptive_step_size_cg(a_mat: np.ndarray, p_k: np.ndarray, r_k: np.ndarray, eps: float = 1e-16):
     """
     Computes optimal step size for CG: alpha = (p.T @ r) / (p.T @ A @ p)

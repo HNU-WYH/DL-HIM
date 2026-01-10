@@ -7,19 +7,22 @@ from src.utils.cfg_util import load_config
 from src.neural_operator import create_no
 
 
-CONFIG_WILDCARD = "diffusion1d*"  # config filename wildcard
+CONFIG_WILDCARD = "diffusion*"  # config filename wildcard
 TRAINER_TYPE = "static"           # "static" or "dynamic"
 DATASET_PATH = None               # path to .npz dataset; None -> config default
 LOSS_NORM = None                  # "l1", "l2", or "h1"; None -> config default
 LOSS_TYPE = None                  # "error" or "residual"; None -> config default
 SAVE_AFTER_TRAIN = True           # whether save the trained neural operator model
+USE_CONS = False
 PRINT_INTERVAL = 1000              # Interval of printing; DeepONet recommend 1000, FNS recommend 100;
+
 
 def apply_training_overrides(cfg: Box,
                              loss_type=LOSS_TYPE,
                              loss_norm=LOSS_NORM,
                              dataset_path=DATASET_PATH,
                              trainer_type=TRAINER_TYPE,
+                             use_cons=USE_CONS,
                              ):
     if trainer_type is not None:
         cfg.training.mode = trainer_type
@@ -32,6 +35,10 @@ def apply_training_overrides(cfg: Box,
 
     if loss_norm is not None:
         cfg.training.loss.norm = loss_norm
+
+    if use_cons is not None:
+        cfg.training.fns_setting.hard_cons = USE_CONS
+        cfg.training.don_setting.hard_cons = USE_CONS
 
     return cfg
 
@@ -50,11 +57,20 @@ def select_trainer(model, trainer_type: str = TRAINER_TYPE, save_path=None, prin
 
 
 def ckpt_dir(cfg: Box):
+    n_dim = cfg.problem.n_dim
+    operator_type = cfg.training.operator_type.lower()
     problem_name, trainer_type = cfg.problem.type.lower(), cfg.training.mode.lower()
     loss_type, loss_norm = cfg.training.loss.type.lower(), cfg.training.loss.norm.lower()
-    n_dim = cfg.problem.n_dim
 
-    ckpt_base = f"./checkpoints/{problem_name}{n_dim}d/{trainer_type}_{loss_type}_{loss_norm}"
+    if operator_type == "fns":
+        use_hard_cons = cfg.training.don_setting.hard_cons
+    elif operator_type == "deeponet":
+        use_hard_cons = cfg.training.fns_setting.hard_cons
+    else:
+        raise KeyError("Invalid Operator Type. Only DeepONet and FNS are supported")
+
+    cons_ckpt = "cons" if use_hard_cons else "nocons"
+    ckpt_base = f"./checkpoints/{operator_type}_{problem_name}{n_dim}d/{cons_ckpt}/{trainer_type}_{loss_type}_{loss_norm}"
     return ckpt_base
 
 
@@ -100,9 +116,9 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
         print(f"Model and Loss saved to {os.path.dirname(cfg.model_save_path)}")
 
 
-def batch_train(trainer_types=("dynamic",),
+def batch_train(trainer_types=("static",),
                 loss_types=("error", "residual"),
-                loss_norms=("h1",),
+                loss_norms=("h1", "l2"),
                 config_wildcard=CONFIG_WILDCARD,
                 dataset_path=DATASET_PATH,
                 save_after_train=SAVE_AFTER_TRAIN,
@@ -110,7 +126,7 @@ def batch_train(trainer_types=("dynamic",),
                 ):
     """
     Checkpoints will be saved under:
-    ./checkpoints/{problem_name}/{trainer_type}_{loss_type}_{loss_norm}/
+    ./checkpoints/{operator_type}_{problem_name}{dimension}/{cons_type}/{trainer_type}_{loss_type}_{loss_norm}/
     """
     for trainer_type in trainer_types:
         for loss_type in loss_types:

@@ -84,7 +84,7 @@ testing:
 # ============================
 training:
   mode: static                      # "static" or "dynamic"
-  operator_type: FNS           # Neural Operator Type ("DeepONet", "MIONet", "FNS")
+  operator_type: DeepONet           # Neural Operator Type ("DeepONet", "MIONet", "FNS")
   batch_size: 1024                  # batch size
   num_epoch: 10000                  # Epoch num
   lr: 0.0001                        # learning rate
@@ -99,10 +99,12 @@ training:
 
   don_setting:                      # configs for DeepONet/MIONet (Meaningless for FNS)
     f_dim: 80                       # the dimension for output of branch_net & trunk_net
+    hard_cons: True                 # whether to apply the hard constraints in the neural network
 
   fns_setting:
     act: "gelu"
     hidden: 32
+    hard_cons: False                # whether to apply the hard constraints in the neural network
 
   dynamic:                          # dynamic training settings (not used in static)
     horizon_size: 5                 # the num of future step in dynamic training framework
@@ -119,14 +121,21 @@ solver:
   numerical:
     method: jacobi                             # the numerical solver, "jacobi" or "GS"
     relaxation_factor:  0.6                    # the relaxation coefficient for the classical smoother
+    numerical_update: fixed                    # fixed | aa | am
+    AA:
+      m: 10
+      reg: 1e-16
+
   hybrid:
     update_ratio: 20                           # Ratio of classical to neural updates
     neural_update: fixed                       # "fixed" (size = 1), "cg" (size = p.Tr/p.TAp), "aa" (anderson acc.)
-    aa_m: 5                                    # the size of aa's history (If use aa to update)
-  eigen_tracking:
-    enabled: False                             # Whether to track eigen-mode loss during iterations
-    modes_of_interest: [1, 3, 5, 10]           # the indices of eigen-mode
+    AA:
+      m: 10                                     # the size of aa's history (If use aa to update)
+      reg: 1e-10                               # the regularization term
 
+#  eigen_tracking:
+#    enabled: False                             # Whether to track eigen-mode loss during iterations
+#    modes_of_interest: [1, 3, 5, 10]           # the indices of eigen-mode
 
 ## the configs of MG (not discussed in our paper)
 #smoother_type: hybrid-jacobi                  # gs, jacobi, hybrid-gs, or hybrid-jacobi

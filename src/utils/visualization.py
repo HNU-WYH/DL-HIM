@@ -175,24 +175,24 @@ def plot_case_predictions(plot_predictions: Dict[int, Dict[str, Dict[str, np.nda
             error = results["u_pred"] - results["u_true"]
             ax_err.plot(results["x_nodes"], error, label=label + f":{results['error']:.2e}")
 
-        # finish the solution plotting
-        ax_pred.plot(results["x_nodes"], results["u_true"], label="True", color="black", linewidth=2)
-        ax_pred.legend()
-        ax_pred.set_ylabel("u(x)")
-        ax_pred.set_title(f"Prediction vs True: {sample_idx}")
-        ax_pred.grid(True, linestyle=":", linewidth=0.5)
+            # finish the solution plotting
+            ax_pred.plot(results["x_nodes"], results["u_true"], label="True", color="black", linewidth=2)
+            ax_pred.legend()
+            ax_pred.set_ylabel("u(x)")
+            ax_pred.set_title(f"Prediction vs True: {sample_idx}")
+            ax_pred.grid(True, linestyle=":", linewidth=0.5)
 
-        # finish the error plotting
-        ax_err.legend()
-        ax_err.set_ylabel("Error")
-        ax_err.set_title(f"Absolute Error: {sample_idx}")
-        ax_err.grid(True, linestyle=":", linewidth=0.5)
+            # finish the error plotting
+            ax_err.legend()
+            ax_err.set_ylabel("Error")
+            ax_err.set_title(f"Absolute Error: {sample_idx}")
+            ax_err.grid(True, linestyle=":", linewidth=0.5)
 
-        axes[-1, 0].set_xlabel("x")
-        axes[-1, 1].set_xlabel("x")
+            axes[-1, 0].set_xlabel("x")
+            axes[-1, 1].set_xlabel("x")
 
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
-    plt.show()
+            plt.tight_layout(rect=[0, 0, 1, 0.95])
+            plt.show()
 
 
 __all__ = ["plot_test_samples", "plot_loss_history", "plot_case_predictions"]

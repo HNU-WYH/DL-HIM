@@ -53,7 +53,7 @@ def ensure_list_in_field(config, filed_paths=None):
             'testing.k_x.grf_setting.l0',
             'testing.f_x.grf_setting.sigma',
             'testing.f_x.grf_setting.l0',
-            'solver.eigen_tracking.modes_of_interest'
+            # 'solver.eigen_tracking.modes_of_interest'
         ]
 
     for field_path in filed_paths:

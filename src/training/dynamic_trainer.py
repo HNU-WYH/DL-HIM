@@ -104,7 +104,7 @@ class DynamicTrainer:
     def _jacobi_step(self, D_inv: torch.Tensor, residual: torch.Tensor):
         return self.relax_factor * D_inv * residual
 
-    def _hybrid_rollout(self, A_batch:torch.Tensor, f_batch:torch.Tensor, k_batch: torch.Tensor,
+    def _hybrid_rollout(self, A_batch:torch.Tensor, f_batch: torch.Tensor, k_batch: torch.Tensor,
                         u_curr: Optional[torch.Tensor] = None, horizon: int = 5, **kwargs):
         # Initialization
         if u_curr is not None:
@@ -273,7 +273,8 @@ class DynamicTrainer:
             self.val_losses.append(val_loss)
 
             if epoch % self.print_interval == 0 or epoch == self.epochs - 1:
-                print(f"Epoch [{epoch}/{self.epochs}], Train Loss: {train_loss: .4e}, Val Loss: {val_loss: .4e}, Horizon: {self.current_horizon}")
+                print(f"Epoch [{epoch}/{self.epochs}], Train Loss: {train_loss: .4e}, "
+                      f"Val Loss: {val_loss: .4e}, Horizon: {self.current_horizon}")
 
             self._maybe_sole_validation(epoch, val_pred)
             self._maybe_rollout_validation(epoch)

@@ -5,7 +5,7 @@ from src.utils.fdm_utils import *
 
 class Helmholtz1D:
     """
-    Solve: u''(x) + k(x)^2 u(x) = f(x) with u(0)=u_left, u(1)=u_right.
+    Solve: -u''(x) - k(x)^2 u(x) = f(x) with u(0)=u_left, u(1)=u_right.
     """
     def __init__(self, x_nodes, k_x, f_x, mat_type="sparse", **kwargs):
         """
@@ -27,7 +27,9 @@ class Helmholtz1D:
         assert self.x.shape == self.f.shape == self.k.shape
 
         # Compute the global matrix A_global
-        self.A_global = build_diffusion_matrix_1d(self.x, self.k, mat_type=self.mat_type)
+        L = build_diffusion_matrix_1d(self.x, 1.0, mat_type=self.mat_type)
+        R = -build_reaction_matrix_1d(self.x, self.k, mat_type=self.mat_type)
+        self.A_global = L + R
 
         # Initialize variables
         self.A_ii, self.u_left, self.u_right = None, None, None
@@ -35,7 +37,7 @@ class Helmholtz1D:
 
     def build_system(self, u_left=0.0, u_right=0.0, method="fdm"):
         """
-            -(-u''） + (k^2)u = f
+            -u''(x) - k(x)^2 u(x) = f(x)
         """
         if method.lower() != 'fdm':
             raise NotImplementedError(f"{method} has not been implemented yet")
@@ -52,7 +54,7 @@ class Helmholtz1D:
 
     def solve(self, u_left=0.0, u_right=0.0, method="fdm"):
         """
-            -(-u''） + (k^2)u = f
+            -u''(x) - k(x)^2 u(x) = f(x)
         """
         if method.lower() != 'fdm':
             raise NotImplementedError(f"{method} has not been implemented yet")
@@ -81,5 +83,3 @@ class Helmholtz1D:
                 "k_x":      self.k,                 # (n,)
                 "x_inner":  self.x[inner],          # (n-2)
                 }
-
-

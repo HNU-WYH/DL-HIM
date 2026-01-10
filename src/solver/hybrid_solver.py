@@ -92,12 +92,12 @@ class HybridSolver:
     def compute_residual(self, u_inner: np.ndarray) -> np.ndarray:
         return self.f_inner - self.A_inner @ u_inner
 
-    def _numerical_step(self, u_inner: np.ndarray) -> np.ndarray:
+    def _numerical_step(self, u_inner: np.ndarray, residual: Optional[np.ndarray] = None) -> np.ndarray:
         """
             u_{k+1} = u_{k} + omega * M^{-1} * (f-A u_k)
         """
-
-        residual = self.compute_residual(u_inner)
+        if residual is None:
+            residual = self.compute_residual(u_inner)
 
         if self.smoother_type == "jacobi":
             D_inv = 1.0 / self.M
@@ -111,11 +111,12 @@ class HybridSolver:
 
         return u_inner + self.relax_factor * delta
 
-    def _neural_step(self, u_inner: np.ndarray) -> np.ndarray:
+    def _neural_step(self, u_inner: np.ndarray, residual: Optional[np.ndarray] = None) -> np.ndarray:
         if self.model is None:
             raise ValueError("Neural Operator model is not initialized")
 
-        residual = self.compute_residual(u_inner)
+        if residual is None:
+            residual = self.compute_residual(u_inner)
         delta_u = self.model.predict(k_x=self.k_x, f_x=residual, x_k=self.prob_x_nodes,
                                      x_f=self.prob_x_nodes[self.inner_slice],
                                      query_points=self.prob_x_nodes[self.inner_slice])
@@ -171,6 +172,7 @@ class HybridSolver:
 
         # Solving the PDE with DL-HIM
         start_time = time.time()
+        r_curr = self.compute_residual(u_curr)
         pbar = tqdm(range(max_iter), desc=f"Solving ({mode})")
 
         for iter_idx in pbar:
@@ -178,28 +180,28 @@ class HybridSolver:
 
             # 1. Choose the Strategy
             if mode == "numerical":
-                u_next = self._numerical_step(u_curr)
+                u_next = self._numerical_step(u_curr, residual=r_curr)
                 if aa is not None:
                     u_next = u_curr + aa.compute(u_curr, u_next)
 
             elif mode == "deeponet":
-                u_next = self._neural_step(u_curr)
+                u_next = self._neural_step(u_curr, residual=r_curr)
 
             elif mode == "hybrid":
                 if numerical_update:
-                    u_next = self._numerical_step(u_curr)
+                    u_next = self._numerical_step(u_curr, residual=r_curr)
                     # if aa:
                     #     u_next = u_curr + aa.compute(u_curr, u_next)
                 else:
-                    u_next = self._neural_step(u_curr)
+                    u_next = self._neural_step(u_curr, residual=r_curr)
                     if aa:
                         u_next = u_curr + aa.compute(u_curr, u_next)
             else:
                 raise ValueError(f"Unknown mode: {mode}")
 
             # 2. Convergence Checking
-            current_res = self.compute_residual(u_next)
-            res_norm = np.linalg.norm(current_res, ord=np.inf)
+            r_curr = self.compute_residual(u_next)
+            res_norm = np.linalg.norm(r_curr, ord=np.inf)
 
             history["residual_norm"].append(res_norm)
             history["time"].append(time.time() - start_time)
@@ -209,7 +211,7 @@ class HybridSolver:
 
             u_curr = u_next
             if res_norm < tol:
-                print(f"Converged at iter {iter_idx} with residual {res_norm:.2e}")
+                print(f"Converged at iter {iter_idx} with residual {res_norm: .2e}")
                 break
 
         return u_curr, history

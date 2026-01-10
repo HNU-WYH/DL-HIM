@@ -1,29 +1,29 @@
 import os
-os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
-
 import copy
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
-
-import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.pyplot as plt
+
 from box import Box
 from tqdm import tqdm
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
-from src.utils.visualization import plot_case_predictions
-from src.solver.hybrid_solver import HybridSolver
-from src.utils.fdm_utils import expand_solution
 from src.utils.cfg_util import load_config
+from src.utils.fdm_utils import expand_solution
+from src.solver.hybrid_solver import HybridSolver
+from src.utils.visualization import plot_case_predictions
+from src.utils.stepin_utils import AndersonAcceleration, AndersonMixing
 
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
 # In[]:
 # Pre-registered config for unresolved problem and testing data
-CONFIG_WILDCARD = "diffusion1d*"                       # config filename wildcard
+CONFIG_WILDCARD = "helmholtz1d*"                       # config filename wildcard
 
 TEST_GRID_NUM: Optional[int] = None                    # use dataset grid by default
 TEST_DATASET_PATH: Optional[str] = None                # default: cfg["dataset_path"] + "_test.npz"
 
-SAMPLE_INDICES: Sequence[int] = None                  # validation indices to evaluate
-PLOT_SAMPLE_INDICES: Optional[Sequence[int]] = None  # indices in the testing data to visualize
+SAMPLE_INDICES: Optional[Sequence[int]] = np.arange(10)                  # validation indices to evaluate
+PLOT_SAMPLE_INDICES: Optional[Sequence[int]] = [9]  # indices in the testing data to visualize
 
 MAX_ITER: Optional[int] = None                         # Iteration / tolerance applied to every case
 TOL: Optional[float] = None                            # by default using the value in the yaml file
@@ -31,7 +31,7 @@ TOL: Optional[float] = None                            # by default using the va
 # Pre-registered model checkpoints (use the keys inside CASES)
 # If Default is None, will raise an error
 MODEL_PATHS: Dict[str, Optional[str]] = {
-    "Default": "checkpoints/diffusion1d/dynamic_error_l2/diffusion_1D_Grid31_Ep10000_2025-12-19.pt",
+    "Default": "checkpoints/deeponet_helmholtz1d/static_error_l2/helmholtz_1D_Grid31_Ep20000_2026-01-07.pt",
     # "Default": "checkpoints/DeepONet_diffusion1d/dynamic_residual_h1_cur/diffusion_1D_Grid31_Ep20000_2025-12-11.pt",
     # "Others": "can specify other model path and use them in the CASES configuration "
 }
@@ -40,17 +40,24 @@ MODEL_PATHS: Dict[str, Optional[str]] = {
 CASES: List[Dict] = [
     # {"label": "Pure-DeepONet", "mode": "neural",    "model": "Default", "one_shot": True},
 
-    {"label": "Gauss-Seidel", "mode": "numerical", "model": None, "numerical_method": "gauss-seidel"},
+    # {"label": "Gauss-Seidel", "mode": "numerical", "model": None, "numerical_method": "gauss-seidel"},
 
     {"label": "Jacobi", "mode": "numerical", "model": None, "numerical_method": "jacobi"},
 
-    {"label": "Jacobi-AA", "mode": "numerical", "model": None, "numerical_method": "jacobi", "neural_update": "aa", "aa_m": 10},
+    # {"label": "Jacobi-AA", "mode": "numerical", "model": None, "numerical_method": "jacobi",
+    #  "numerical_update": "aa", "aa_m": 10},
 
-    {"label": "Hybrid-fixed", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi", "hybrid_ratio": 20, "neural_update": "fixed"},
+    {"label": "Hybrid-fixed", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
+    "hybrid_ratio": 20, "neural_update": "fixed"},
 
-    {"label": "Hybrid-AA", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi", "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 10},
+    {"label": "Hybrid-AA", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
+     "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 10},
 
-    {"label": "Hybrid-Adaptive", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi", "hybrid_ratio": 20, "neural_update": "cg"},
+    {"label": "Hybrid-AM", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
+     "hybrid_ratio": 20, "neural_update": "am", "aa_m": 10},
+
+    # {"label": "Hybrid-Adaptive", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
+    # "hybrid_ratio": 20, "neural_update": "cg"},
 ]
 
 
@@ -58,7 +65,7 @@ CASES: List[Dict] = [
 # =====================
 # Helper functions
 # =====================
-def load_evaluation_dataset(cfg: Box, test_path = TEST_DATASET_PATH) -> Tuple[np.lib.npyio.NpzFile, bool]:
+def load_evaluation_dataset(cfg: Box, test_path=TEST_DATASET_PATH) -> Tuple[np.lib.npyio.NpzFile, bool]:
     """Load the preferred evaluation dataset.
 
     Returns
@@ -117,16 +124,16 @@ def select_test_sample(grid_num: Optional[int], dataset,
         return k[0], f[0], x_after, u[0]
 
 
-def resolve_model_path(model_key: Optional[str], model_paths = MODEL_PATHS) -> Optional[str]:
+def resolve_model_path(model_key: Optional[str], model_paths=MODEL_PATHS) -> Optional[str]:
     if model_key is None:
         return None
     if model_key not in model_paths:
-        raise KeyError(f"Model '{model_key}' not registered in MODEL_PATHS")
+        raise KeyError(f"Model '{model_key}' not in registered MODEL_PATHS")
     return model_paths[model_key]
 
 
 def apply_case_overrides(base_cfg: Box, case: Dict,
-                         tol = TOL, max_iter = MAX_ITER) -> Box:
+                         tol=TOL, max_iter=MAX_ITER) -> Box:
     cfg = copy.deepcopy(base_cfg)
 
     # Ensure hybrid initialization for neural runs
@@ -173,14 +180,18 @@ def pad_series(values: List[float], target_len: int) -> np.ndarray:
     return padded
 
 
-#TODO: 这里改为直接用cfg会不会更好? 每一次迭代都用override的cfg来工作
-#TODO: 这里我一会儿又要expand,一会儿又不要,这里也要改
+# TODO: 这里改为直接用cfg会不会更好? 每一次迭代都用override的cfg来工作
+# TODO: 这里我一会儿又要expand,一会儿又不要,这里也要改
 def collect_history(solver: HybridSolver,
                     u_ref_inner: np.ndarray,
                     max_iter: int, tol: float,
                     mode: str, one_shot: bool = False,
                     aa_m: Optional[int] = None,
+                    use_cache_residual: bool = True,
                     ) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Run a single case and collect (residual, error) histories.
+    """
     mode = mode.lower()
     # u_ref_inner = solver.u_inner
     u_curr = np.zeros_like(u_ref_inner, dtype=np.float64)
@@ -190,53 +201,76 @@ def collect_history(solver: HybridSolver,
         residual = solver.compute_residual(u_pred)
         res_norm = float(np.linalg.norm(residual, ord=2))
         err_norm = float(np.linalg.norm(u_pred - u_ref_inner, ord=2))
-        return np.full(max_iter, res_norm, dtype=np.float64) , np.full(max_iter, err_norm, dtype=np.float64), u_pred
+        return np.full(max_iter, res_norm, dtype=np.float64), np.full(max_iter, err_norm, dtype=np.float64), u_pred
 
     # Initialize Anderson Acceleration if requested
-    aa = None
     if solver.neural_update_type == "aa":
-        from src.utils.stepin_utils import AndersonAcceleration
-
         history_size = aa_m or solver.config.solver.hybrid.get("aa_m", 10)
-        aa = AndersonAcceleration(m=history_size, reg=1e-20) if history_size else None
+        aa = AndersonAcceleration(m=history_size, reg=1e-20)
+    elif solver.neural_update_type == "am":
+        history_size = aa_m or solver.config.solver.hybrid.get("aa_m", 10)
+        aa = AndersonMixing(m=history_size, reg=1e-20)
+    else:
+        aa = None
 
+    # --------------------------
+    # Recording History
+    # --------------------------
     errors: List[float] = []
     residuals: List[float] = []
+
+    # Use cached residual to avoid computing the residual redundantly inside steps
+    r_curr = solver.compute_residual(u_curr) if use_cache_residual else None
 
     for iter_idx in range(max_iter):
         numerical_update = (iter_idx + 1) % solver.hybrid_ratio
 
+        # 1) Produce proposal g_k from the base solver
+        apply_anderson = False
         if mode == "numerical":
-            u_next = solver._numerical_step(u_curr)
-            if aa:
-                u_next = u_curr + aa.compute(u_curr, u_next)
+            g_k = solver._numerical_step(u_curr, residual=r_curr)
+            apply_anderson = aa is not None
+
         elif mode == "deeponet":
-            u_next = solver._neural_step(u_curr)
-            if aa:
-                u_next = u_curr + aa.compute(u_curr, u_next)
+            g_k = solver._neural_step(u_curr, residual=r_curr)
+
         elif mode == "hybrid":
             if numerical_update:
-                u_next = solver._numerical_step(u_curr)
+                g_k = solver._numerical_step(u_curr, residual=r_curr)
+                apply_anderson = False
             else:
-                u_next = solver._neural_step(u_curr)
-                if aa:
-                    u_next = u_curr + aa.compute(u_curr, u_next)
+                g_k = solver._neural_step(u_curr, residual=r_curr)
+                apply_anderson = aa is not None
 
         else:
             raise ValueError(f"Unknown mode: {mode}")
 
-        res_vec = solver.compute_residual(u_next)
-        res_norm = float(np.linalg.norm(res_vec, ord=2))
+        # 2) Apply Anderson with at most ONE matvec per iteration
+        if apply_anderson and solver.neural_update_type == "am":
+            r_gk = solver.compute_residual(g_k)
+            u_next, r_next, _ = aa.compute(g_k, r_gk)
+
+        elif apply_anderson and solver.neural_update_type == "aa":
+            u_next = u_curr + aa.compute(u_curr, g_k)
+            r_next = solver.compute_residual(u_next)
+        else:
+            u_next = g_k
+            r_next = solver.compute_residual(u_next)
+
+        # 3) Record metrics and advance
+        res_norm = float(np.linalg.norm(r_next, ord=2))
         err_norm = float(np.linalg.norm(u_next - u_ref_inner, ord=2))
 
         residuals.append(res_norm)
         errors.append(err_norm)
+
         u_curr = u_next
+        r_curr = r_next
 
         if res_norm < tol:
             break
 
-    return pad_series(residuals, max_iter) , pad_series(errors, max_iter), u_curr
+    return pad_series(residuals, max_iter), pad_series(errors, max_iter), u_curr
 
 
 def evaluate_case_on_sample(base_cfg: Box, case: Dict,

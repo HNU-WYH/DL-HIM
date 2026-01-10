@@ -20,7 +20,12 @@ class DeepONet1d(NeuralOperatorBase):
 
         # define a hard constraint H(x) = x * (x - 1.0)
         # This forces the solution to be 0 at x=0 and x=1
-        self.hard_constraints = lambda x: x * (1.0 - x)
+        self.use_hard_cons = config.training.don_setting.hard_cons
+
+        if self.use_hard_cons:
+            self.hard_constraints = lambda x: x * (1.0 - x)
+        else:
+            self.hard_constraints = None
 
         # for normalizing the parameter function k(x)
         self.register_buffer("k_mean", torch.zeros(1, dtype=torch.float32))
@@ -79,8 +84,7 @@ class DeepONet1d(NeuralOperatorBase):
             :param f_x: e.g. shape = [func num, don grid points - 2]
             :param trunk_input: e.g. shape = [query points, n dim] (query points = don grid points - 2)
             :param a_mats: e.g. shape = [func num, don grid points - 2, don grid points - 2]
-            :param compute_res: whether compute the residual inside the model
-            :param compute_du: whether compute the gradient of solution inside the model
+            :param compute_du: whether compute the gradient of solution inside the model use autograd
             :return: u_pred, res, du_pred, dres
         """
         if k_x.ndim == self.n_dim:
@@ -114,8 +118,11 @@ class DeepONet1d(NeuralOperatorBase):
         u_norm = u_net * f_norm
 
         # Apply hard constraints
-        H_x = self.hard_constraints(trunk_input).squeeze(-1)  # (num_x-2)
-        u_pred = u_norm * H_x  # (B, num_x-2) * (num_x-2) -> (B, num_x-2)
+        if self.hard_constraints is not None:
+            H_x = self.hard_constraints(trunk_input).squeeze(-1)  # (num_x-2)
+            u_pred = u_norm * H_x  # (B, num_x-2) * (num_x-2) -> (B, num_x-2)
+        else:
+            u_pred = u_norm
 
         # res = None
         # if compute_res and a_mats is not None:
@@ -126,9 +133,12 @@ class DeepONet1d(NeuralOperatorBase):
             jvp = self._compute_jvp(trunk_input)      # (num_x-2, f_dim)
             du_norm = (branch_out @ jvp.T) * f_norm   # (B, num_x-2)
 
-            x_coords = trunk_input.squeeze(-1)        # (numx-2, )
-            dH_x = 1.0 - 2.0 * x_coords               # (numx-2, )
-            du_pred = du_norm * H_x + u_norm * dH_x   # (B, num_x-2)
+            if self.hard_constraints is not None:
+                x_coords = trunk_input.squeeze(-1)        # (numx-2, )
+                dH_x = 1.0 - 2.0 * x_coords               # (numx-2, )
+                du_pred = du_norm * H_x + u_norm * dH_x   # (B, num_x-2)
+            else:
+                du_pred = du_norm
 
         return {
             "u_pred": u_pred,
@@ -177,11 +187,12 @@ class DeepONet1d(NeuralOperatorBase):
 
             u_net = branch_out @ trunk_out.T                                # (B, G-2)
             u_norm = u_net * f_norm                                          # Apply normalization
-            u = u_norm
 
-            if self.hard_constraints:
+            if self.hard_constraints is not None:
                 H_x = self.hard_constraints(query_points).squeeze(-1)        # (G-2, )
                 u = u_norm * H_x                                             # Apply hard constraints
+            else:
+                u = u_norm
 
             if batch_size == 1:
                 u = u.squeeze()

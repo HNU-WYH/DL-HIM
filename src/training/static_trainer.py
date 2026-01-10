@@ -32,7 +32,7 @@ class StaticTrainer:
 
         # whether compute gradient of solution inside the model by autograd
         self.use_autograd = getattr(self.model, "use_autograd", False)
-        self.compute_du_pred = self.need_du_true and self.use_autograd
+        self.compute_autograd = self.need_du_true and self.use_autograd
 
         self.print_interval = print_interval
         self.plot_interval = plot_interval
@@ -125,7 +125,7 @@ class StaticTrainer:
 
             # 前向传播
             pred_dict = self.model(k_x=k_batch, f_x=f_batch, a_mats=a_mats_batch,
-                                   compute_du=self.compute_du_pred)
+                                   compute_du=self.compute_autograd)
             u_pred = pred_dict["u_pred"]
             du_pred = self._get_du_pred(u_pred, pred_dict, self.x_nodes[1:-1])
 

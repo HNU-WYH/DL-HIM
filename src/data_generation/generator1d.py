@@ -34,7 +34,7 @@ class DataGenerator1d:
 
         # for helmholtz equations, ill-conditioned system matrices need to be filtered
         if self.problem == "helmholtz":
-            self.threshold = config.data.get("threshold", 0.8)
+            self.threshold = config.data.get("threshold", 0.6)
             self.redundancy = max(1.0/self.threshold, config.data.get("redundancy", 1.6))
             self.redundant_func_num = int(self.redundancy * self.func_num)
         else:
@@ -198,7 +198,7 @@ class TestDataGenerator(DataGenerator1d):
         self.func_num = self.testing_cfg.func_num if test_num is None else test_num
 
         if self.problem == "helmholtz":
-            self.threshold = self.testing_cfg.get("threshold", 0.8)
+            self.threshold = self.testing_cfg.get("threshold", 0.6)
             self.redundancy = max(1.0 / self.threshold, self.testing_cfg.get("redundancy", 1.6))
             self.redundant_func_num = int(self.redundancy * self.func_num)
         else:

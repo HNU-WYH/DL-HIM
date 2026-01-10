@@ -13,14 +13,14 @@ from scripts.evaluate_single_solver import evaluate_case_on_sample, load_evaluat
 
 
 # In[]:
-CONFIG_WILDCARD = "diffusion1d*"
-CHECKPOINT_ROOT = "checkpoints/diffusion1d"
+CONFIG_WILDCARD = "helmholtz1d*"
+CHECKPOINT_ROOT = "checkpoints/deeponet_helmholtz1d"
 
 TEST_GRID_NUM: Optional[int] = None                    # if not equal, interpolate to uniformly spaced TEST_GRID_NUM
 TEST_DATASET_PATH: Optional[str] = None                # path to .npz test dataset; None -> derive from the dataset path
 
 SAMPLE_INDICES: Optional[Iterable[int]] = None
-PLOT_SAMPLE_INDICES: Optional[Iterable[int]] = None
+PLOT_SAMPLE_INDICES: Optional[Iterable[int]] = [0]
 
 MAX_ITER: Optional[int] = None                         # Iteration / tolerance applied to every case
 TOL: Optional[float] = None                            # by default using the value in the yaml file
@@ -146,6 +146,7 @@ def compare_checkpoints(
         plot_case_predictions(plot_predictions)
 
     return avg_results
+
 
 if __name__ == "__main__":
     avg_results3 = compare_checkpoints(plot_indices=PLOT_SAMPLE_INDICES)
