@@ -127,6 +127,7 @@ class StaticTrainer:
             k_batch = self.k_train[batch_idx]
             f_batch = self.f_train[batch_idx]
             u_batch = self.u_train[batch_idx]
+            self._f_true_current = f_batch
 
             du_batch = self.du_train[batch_idx] if self.need_du_true else None
             a_mats_batch = self.a_mats_train[batch_idx] if self.need_A else None
@@ -305,4 +306,3 @@ class StaticTrainer:
                 f_norm = torch.linalg.vector_norm(f_true, ord=2, dim=-1)
                 return torch.mean(res_norm / torch.clamp(f_norm, min=self.relative_eps))
 
-            

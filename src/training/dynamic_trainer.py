@@ -238,6 +238,7 @@ class DynamicTrainer:
             f_batch = self.f_train[batch_idx]
             k_batch = self.k_train[batch_idx]
             A_batch = self.a_mats_train[batch_idx]
+            self._f_true_current = f_batch
 
             u_true = self.u_train[batch_idx]
             du_true = self.du_train[batch_idx] if self.need_du_true else None
