@@ -13,13 +13,13 @@ from scripts.evaluate_single_solver import evaluate_case_on_sample, load_evaluat
 
 
 # In[]:
-CONFIG_WILDCARD = "helmholtz1d*"
-CHECKPOINT_ROOT = "checkpoints/deeponet_helmholtz1d"
+CONFIG_WILDCARD = "diffusion1d*"
+CHECKPOINT_ROOT = "checkpoints/deeponet_diffusion1d"
 
 TEST_GRID_NUM: Optional[int] = None                    # if not equal, interpolate to uniformly spaced TEST_GRID_NUM
 TEST_DATASET_PATH: Optional[str] = None                # path to .npz test dataset; None -> derive from the dataset path
 
-SAMPLE_INDICES: Optional[Iterable[int]] = None
+SAMPLE_INDICES: Optional[Iterable[int]] = np.arange(0, 90, 10)
 PLOT_SAMPLE_INDICES: Optional[Iterable[int]] = [0]
 
 MAX_ITER: Optional[int] = None                         # Iteration / tolerance applied to every case
@@ -33,16 +33,13 @@ def discover_checkpoints(root: str = CHECKPOINT_ROOT) -> List[Tuple[str, str]]:
     if not os.path.isdir(root):
         raise FileNotFoundError(f"Checkpoint root '{root}' does not exist")
 
-    for family in sorted(os.listdir(root)):
-        family_path = os.path.join(root, family)
-        if not os.path.isdir(family_path):
-            continue
-
-        for candidate in sorted(os.listdir(family_path)):
-            candidate_path = os.path.join(family_path, candidate)
-            if candidate_path.endswith(".pt"):
-                # label = os.path.join(family, candidate)
-                checkpoint_pairs.append((family[:], candidate_path))
+    for dirpath, _, filenames in os.walk(root):
+        for filename in sorted(filenames):
+            if not filename.endswith(".pt"):
+                continue
+            candidate_path = os.path.join(dirpath, filename)
+            label = os.path.relpath(dirpath, root)
+            checkpoint_pairs.append((label, candidate_path))
     return checkpoint_pairs
 
 
@@ -52,7 +49,7 @@ def build_case(label: str, model_path: str) -> Dict:
         "mode": "hybrid",
         "numerical_method": "jacobi",
         "hybrid_ratio": 20,
-        "neural_update": "fixed",
+        "neural_update": "am",
         "aa_m": 10,
         "model_path": model_path,
     }
@@ -79,7 +76,7 @@ def compare_checkpoints(
     if any(idx not in available_indices for idx in sample_indices):
         raise IndexError("Sample indices exceed available evaluation data")
 
-    # If not providing the plotting indices, do not plotting any data
+    # If not providing the plotting indices, do not ploting any data
     if isinstance(plot_indices, int):
         plot_indices = [plot_indices]
     plot_indices = list(plot_indices) if plot_indices is not None else []

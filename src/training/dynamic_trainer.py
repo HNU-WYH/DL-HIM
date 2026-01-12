@@ -10,6 +10,7 @@ from torch import vmap
 from src.neural_operator import NeuralOperatorBase
 from src.utils.visualization import plot_test_samples
 
+
 class DynamicTrainer:
     def __init__(self, model: NeuralOperatorBase,
                  print_interval: int = 1000,
@@ -29,6 +30,8 @@ class DynamicTrainer:
         self.alpha = self.model.config.training.loss.grad_alpha
         self.loss_type = self.model.config.training.loss.type.lower()
         self.loss_norm = self.model.config.training.loss.norm.lower()
+        self.relative_loss = self.model.config.training.loss.get("relative", True)
+        self.relative_eps = self.model.config.training.loss.get("relative_eps", 1e-12)
 
         # dynamic training setting
         dyn_cfg = self.model.config.training.dynamic
@@ -56,6 +59,7 @@ class DynamicTrainer:
         self.train_losses, self.val_losses = [], []
         self.k_train = self.f_train = self.u_train = self.du_train = self.a_mats_train = None
         self.x_nodes = self.k_val = self.f_val = self.u_val = self.du_val = self.a_mats_val = None
+        self._f_true_current = self._df_true_current = None
 
         self.optimizer = torch.optim.Adam(
             self.model.parameters(),
@@ -92,7 +96,7 @@ class DynamicTrainer:
             self.du_val = self.du_train = None
 
     @staticmethod
-    def _residual_compute(A_batch:torch.Tensor, f_batch:torch.Tensor, u_batch:torch.Tensor):
+    def _residual_compute(A_batch: torch.Tensor, f_batch: torch.Tensor, u_batch: torch.Tensor):
         """
         params:
             A_batch: [B, N-2, N-2];
@@ -104,7 +108,7 @@ class DynamicTrainer:
     def _jacobi_step(self, D_inv: torch.Tensor, residual: torch.Tensor):
         return self.relax_factor * D_inv * residual
 
-    def _hybrid_rollout(self, A_batch:torch.Tensor, f_batch: torch.Tensor, k_batch: torch.Tensor,
+    def _hybrid_rollout(self, A_batch: torch.Tensor, f_batch: torch.Tensor, k_batch: torch.Tensor,
                         u_curr: Optional[torch.Tensor] = None, horizon: int = 5, **kwargs):
         # Initialization
         if u_curr is not None:
@@ -117,14 +121,14 @@ class DynamicTrainer:
 
         # compute the diagonal and its inverse to avoid redundant computation
         D_batch = A_batch.diagonal(dim1=-2, dim2=-1)
-        D_inv =torch.reciprocal(D_batch)
+        D_inv = torch.reciprocal(D_batch)
 
         # storing the intermediate solution and residual
         u_seq, res_seq = [], []
         total_steps = horizon * self.update_ratio
 
         for step in range(total_steps):
-            #TODO: this is a problem that might leading to mismatch
+            # TODO: this is a problem that might leading to mismatch
             # If same as the inference: Jacobi first and then Neural Operator
             # NO are trained on smoothed dataset, which lead to mismatch
             # as the smoothing effects varies much between coarse grid (training) and fine grid (inference)
@@ -144,7 +148,7 @@ class DynamicTrainer:
             if len(u_seq) >= horizon:
                 break
 
-        return torch.stack(u_seq),torch.stack(res_seq)
+        return torch.stack(u_seq), torch.stack(res_seq)
 
     def _grad_fd(self, batch_func: torch.Tensor, x_nodes: Optional[torch.Tensor] = None):
         """
@@ -153,9 +157,9 @@ class DynamicTrainer:
             x_nodes: [N-2,];
         """
         if x_nodes is not None:
-            x_nodes = torch.as_tensor(x_nodes, dtype=torch.float32, device=self.device)     # [N-2, ]
+            x_nodes = torch.as_tensor(x_nodes, dtype=torch.float32, device=self.device)  # [N-2, ]
         else:
-            x_nodes = self.x_nodes[1:-1]                                                    # [N-2, ]
+            x_nodes = self.x_nodes[1:-1]  # [N-2, ]
 
         def gradient_compute(single_func, x_data):
             """
@@ -172,7 +176,8 @@ class DynamicTrainer:
         return batch_gradient(batch_func, x_nodes)
 
     def compute_loss(self, u_seq: torch.Tensor, res_seq: torch.Tensor,
-                     u_true: Optional[torch.Tensor]=None, du_true: Optional[torch.Tensor]=None):
+                     u_true: Optional[torch.Tensor] = None,
+                     du_true: Optional[torch.Tensor] = None):
         """
         params:
             u_seq:  list of [B, N-2];
@@ -187,24 +192,27 @@ class DynamicTrainer:
             warnings.filterwarnings("ignore", message="Using a target size *")
 
             if self.loss_norm == "l2":
-                loss = torch.nn.functional.mse_loss(u_seq, u_true)
+                loss = self._relative_error(u_seq, u_true, ord_val=2)
             elif self.loss_norm == "l1":
-                loss = torch.nn.functional.l1_loss(u_seq, u_true)
+                loss = self._relative_error(u_seq, u_true, ord_val=1)
             elif self.loss_norm == "h1":
                 du_seq = self._grad_fd(u_seq, x_nodes=self.x_nodes[1:-1])
-                loss = torch.nn.functional.mse_loss(u_seq, u_true) + \
-                    self.alpha * torch.nn.functional.mse_loss(du_seq, du_true)
+                loss = self._relative_error(u_seq, u_true, ord_val=2) + \
+                       self.alpha * self._relative_error(du_seq, du_true, ord_val=2)
             else:
                 raise NotImplementedError("Unknown norm type for the error loss.")
 
         elif self.loss_type == "residual":
             if self.loss_norm == "l2":
-                loss = torch.mean(torch.pow(res_seq, 2))
+                loss = self._relative_residual(res_seq, f_true=self._f_true_current, ord_val=2)
             elif self.loss_norm == "l1":
-                loss = torch.mean(torch.abs(res_seq))
+                loss = self._relative_residual(res_seq, f_true=self._f_true_current, ord_val=1)
             elif self.loss_norm == "h1":
                 dres_seq = self._grad_fd(res_seq, x_nodes=self.x_nodes[1:-1])
-                loss = torch.mean(torch.pow(res_seq, 2)) + self.alpha * torch.mean(torch.pow(dres_seq, 2))
+                self._df_true_current = self._grad_fd(self._f_true_current, x_nodes=self.x_nodes[1:-1])
+
+                loss = self._relative_residual(res_seq, f_true=self._f_true_current, ord_val=2) + \
+                       self.alpha * self._relative_residual(dres_seq, f_true=self._df_true_current, ord_val=2)
             else:
                 raise NotImplementedError("Unknown norm type for the residual loss.")
 
@@ -214,7 +222,7 @@ class DynamicTrainer:
         return torch.mean(loss)
 
     def train_epoch(self):
-        #TODO: 把是否当场生成rhs data做成一个选项放在config里面
+        # TODO: 把是否当场生成rhs data做成一个选项放在config里面
         # 如果选择当场生成, 再使用不同的逻辑
         # 我现在这个逻辑是针对于static dataset的
         self.model.train()
@@ -236,6 +244,7 @@ class DynamicTrainer:
 
             u_seq, res_seq = self._hybrid_rollout(A_batch=A_batch, f_batch=f_batch, k_batch=k_batch,
                                                   u_curr=None, horizon=self.current_horizon)
+            self._f_true_current = f_batch
             loss = self.compute_loss(u_seq=u_seq, res_seq=res_seq, u_true=u_true, du_true=du_true)
 
             self.optimizer.zero_grad()
@@ -255,6 +264,45 @@ class DynamicTrainer:
             sole_pred = pred_dict["u_pred"]
             val_loss = torch.nn.functional.mse_loss(sole_pred, self.u_val)
         return val_loss.item(), sole_pred
+
+    def _relative_error(self, u_pred: torch.Tensor, u_true: torch.Tensor, ord_val: int=2):
+        if not self.relative_loss:
+            if ord_val == 1:
+                return torch.nn.functional.l1_loss(u_pred, u_true)
+            elif ord_val == 2:
+                return torch.nn.functional.mse_loss(u_pred, u_true)
+            else:
+                raise ValueError("only l1 and l2 norm are supported")
+
+        else:
+            if ord_val == 1:
+                diff_norm = torch.linalg.vector_norm(u_pred - u_true, ord=1, dim=-1)
+                ref_norm = torch.linalg.vector_norm(u_true, ord=1, dim=-1)
+                return torch.mean(diff_norm / torch.clamp(ref_norm, min=self.relative_eps))
+            elif ord_val == 2:
+                diff_norm = torch.linalg.vector_norm(u_pred - u_true, ord=2, dim=-1)
+                ref_norm = torch.linalg.vector_norm(u_true, ord=2, dim=-1)
+                return torch.mean(diff_norm / torch.clamp(ref_norm, min=self.relative_eps))
+
+    def _relative_residual(self, res_seq: torch.Tensor, ord_val: int = 2,
+                           f_true: Optional[torch.Tensor] = None) -> torch.Tensor:
+        if not self.relative_loss:
+            if ord_val == 1:
+                return torch.mean(torch.abs(res_seq))
+            if ord_val == 2:
+                return torch.mean(torch.pow(res_seq, 2))
+        else:
+            if f_true is None:
+                raise ValueError("f_true is required for relative residual loss.")
+
+            if ord_val == 1:
+                res_norm = torch.linalg.vector_norm(res_seq, ord=1, dim=-1)
+                f_norm = torch.linalg.vector_norm(f_true, ord=1, dim=-1)
+                return torch.mean(res_norm / torch.clamp(f_norm, min=self.relative_eps))
+            elif ord_val == 2:
+                res_norm = torch.linalg.vector_norm(res_seq, ord=2, dim=-1)
+                f_norm = torch.linalg.vector_norm(f_true, ord=2, dim=-1)
+                return torch.mean(res_norm / torch.clamp(f_norm, min=self.relative_eps))
 
     def _update_curriculum(self, epoch: int):
         if self.curriculum_enabled and (epoch + 1) % self.curriculum_interval == 0:
@@ -352,4 +400,3 @@ class DynamicTrainer:
         plt.tight_layout()
         plt.savefig(fig_path, dpi=150)
         plt.close()
-

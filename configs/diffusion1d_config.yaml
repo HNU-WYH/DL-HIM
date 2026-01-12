@@ -86,13 +86,15 @@ training:
   mode: static                      # "static" or "dynamic"
   operator_type: DeepONet           # Neural Operator Type ("DeepONet", "MIONet", "FNS")
   batch_size: 1024                  # batch size
-  num_epoch: 10000                  # Epoch num
+  num_epoch: 60001                  # Epoch num
   lr: 0.0001                        # learning rate
   weight_decay: !!float 1e-8        # weight decay
 
   loss:
     type: Residual                  # the type of loss function (Residual, Error)
     norm: l2                        # norm type ("l1“, "l2", "h1")
+    relative: true                  # whether to use relative error/residual (e.g. ||e||/||u_true||)
+    relative_eps: !!float 1e-12     # epsilon to avoid divide-by-zero in relative losses
     grad_alpha: 0.1                 # weight for gradient term
     use_autograd: false             # for static trainer: True -> use model-provided du; False -> FD
                                     # for dynamic trainer: True/False -> FD

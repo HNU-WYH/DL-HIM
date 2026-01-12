@@ -93,6 +93,8 @@ training:
   loss:
     type: Residual                  # the type of loss function (Residual, Error)
     norm: l2                        # norm type ("l1“, "l2", "h1")
+    relative: true                  # whether to use relative error/residual (e.g. ||e||/||u_true||)
+    relative_eps: !!float 1e-12     # epsilon to avoid divide-by-zero in relative losses
     grad_alpha: 0.1                 # weight for gradient term
     use_autograd: false             # for static trainer: True -> use model-provided du; False -> FD
                                     # for dynamic trainer: True/False -> FD, as autograd is not appropriate

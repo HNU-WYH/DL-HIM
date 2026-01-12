@@ -31,7 +31,7 @@ TOL: Optional[float] = None                            # by default using the va
 # Pre-registered model checkpoints (use the keys inside CASES)
 # If Default is None, will raise an error
 MODEL_PATHS: Dict[str, Optional[str]] = {
-    "Default": "checkpoints/deeponet_helmholtz1d/static_error_l2/helmholtz_1D_Grid31_Ep20000_2026-01-07.pt",
+    "Default": "checkpoints/deeponet_diffusion1d/nocons/static_error_h1/diffusion_1D_Grid31_Ep10000_2026-01-11.pt",
     # "Default": "checkpoints/DeepONet_diffusion1d/dynamic_residual_h1_cur/diffusion_1D_Grid31_Ep20000_2025-12-11.pt",
     # "Others": "can specify other model path and use them in the CASES configuration "
 }
@@ -132,6 +132,19 @@ def resolve_model_path(model_key: Optional[str], model_paths=MODEL_PATHS) -> Opt
     return model_paths[model_key]
 
 
+def infer_hard_constraints_from_path(model_path: Optional[str]) -> Optional[bool]:
+    if not model_path:
+        return None
+    norm_path = os.path.normpath(model_path)
+    cons_token = f"{os.sep}cons{os.sep}"
+    nocons_token = f"{os.sep}nocons{os.sep}"
+    if nocons_token in norm_path:
+        return False
+    if cons_token in norm_path:
+        return True
+    return None
+
+
 def apply_case_overrides(base_cfg: Box, case: Dict,
                          tol=TOL, max_iter=MAX_ITER) -> Box:
     cfg = copy.deepcopy(base_cfg)
@@ -164,6 +177,12 @@ def apply_case_overrides(base_cfg: Box, case: Dict,
     model_path = case.get("model_path") or resolve_model_path(case.get("model"))
     if model_path is not None:
         cfg["model_load_path"] = model_path
+        use_hard_cons = case.get("use_hard_cons")
+        if use_hard_cons is None:
+            use_hard_cons = infer_hard_constraints_from_path(model_path)
+        if use_hard_cons is not None:
+            cfg.training.don_setting.hard_cons = use_hard_cons
+            cfg.training.fns_setting.hard_cons = use_hard_cons
 
     return cfg
 

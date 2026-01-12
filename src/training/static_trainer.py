@@ -26,6 +26,9 @@ class StaticTrainer:
         self.loss_type = self.model.config.training.loss.type.lower()
         self.loss_norm = self.model.config.training.loss.norm.lower()
 
+        self.relative_loss = self.model.config.training.loss.get("relative", False)
+        self.relative_eps = self.model.config.training.loss.get("relative_eps", 1e-12)
+
         # whether A_mats/du_red is required in trainer
         self.need_A = self.loss_type == "residual"
         self.need_du_true = self.loss_type == "error" and self.loss_norm == "h1"
@@ -41,6 +44,9 @@ class StaticTrainer:
         self.train_losses, self.val_losses = [], []
         self.k_train = self.f_train = self.u_train = self.du_train = self.a_mats_train = None
         self.x_nodes = self.k_val = self.f_val = self.u_val = self.du_val = self.a_mats_val = None
+
+        self._f_true_current = None
+        self._du_f_true_current = None
 
         self.optimizer = torch.optim.Adam(
             self.model.parameters(),
@@ -81,22 +87,24 @@ class StaticTrainer:
     def compute_loss(self, u_pred=None, u_true=None, du_pred=None, du_true=None, res=None, dres=None, **kwargs):
         if self.loss_type == "error":
             if self.loss_norm == "l2":
-                return torch.nn.functional.mse_loss(u_pred, u_true)
+                return self._relative_error(u_pred, u_true, ord_val=2)
             elif self.loss_norm == "l1":
-                return torch.nn.functional.l1_loss(u_pred, u_true)
+                return self._relative_error(u_pred, u_true, ord_val=1)
             elif self.loss_norm == "h1":
-                return torch.nn.functional.mse_loss(u_pred, u_true) + \
-                    self.alpha * torch.nn.functional.mse_loss(du_pred, du_true)
+                return self._relative_error(u_pred, u_true, ord_val=2) + \
+                    self.alpha * self._relative_error(du_pred, du_true, ord_val=2)
             else:
                 raise NotImplementedError("Unknown norm type for the error loss.")
 
         elif self.loss_type == "residual":
             if self.loss_norm == "l2":
-                return torch.mean(torch.pow(res, 2))
+                return self._relative_residual(res, f_true=self._f_true_current, ord_val=2)
             elif self.loss_norm == "l1":
-                return torch.mean(torch.abs(res))
+                return self._relative_residual(res, f_true=self._f_true_current, ord_val=1)
             elif self.loss_norm == "h1":
-                return torch.mean(torch.pow(res, 2)) + self.alpha * torch.mean(torch.pow(dres, 2))
+                self._du_f_true_current = self._grad_fd(self._f_true_current, x_nodes=self.x_nodes[1:-1])
+                return self._relative_residual(res, f_true=self._f_true_current, ord_val=2) + \
+                    self.alpha * self._relative_residual(dres, f_true=self._df_true_current, ord_val=2)
             else:
                 raise NotImplementedError("Unknown norm type for the residual loss.")
         else:
@@ -257,3 +265,44 @@ class StaticTrainer:
             x_nodes = self.x_nodes[1:-1]
 
         return torch.gradient(input=func, spacing=(x_nodes,), dim=1)[0]
+
+    def _relative_error(self, u_pred: torch.Tensor, u_true: torch.Tensor, ord_val: int = 2):
+        if not self.relative_loss:
+            if ord_val == 1:
+                return torch.nn.functional.l1_loss(u_pred, u_true)
+            elif ord_val == 2:
+                return torch.nn.functional.mse_loss(u_pred, u_true)
+            else:
+                raise ValueError("only l1 and l2 norm are supported")
+
+        else:
+            if ord_val == 1:
+                diff_norm = torch.linalg.vector_norm(u_pred - u_true, ord=1, dim=-1)
+                ref_norm = torch.linalg.vector_norm(u_true, ord=1, dim=-1)
+                return torch.mean(diff_norm / torch.clamp(ref_norm, min=self.relative_eps))
+            elif ord_val == 2:
+                diff_norm = torch.linalg.vector_norm(u_pred - u_true, ord=2, dim=-1)
+                ref_norm = torch.linalg.vector_norm(u_true, ord=2, dim=-1)
+                return torch.mean(diff_norm / torch.clamp(ref_norm, min=self.relative_eps))
+
+    def _relative_residual(self, res_seq: torch.Tensor, ord_val: int = 2,
+                           f_true: Optional[torch.Tensor] = None) -> torch.Tensor:
+        if not self.relative_loss:
+            if ord_val == 1:
+                return torch.mean(torch.abs(res_seq))
+            if ord_val == 2:
+                return torch.mean(torch.pow(res_seq, 2))
+        else:
+            if f_true is None:
+                raise ValueError("f_true is required for relative residual loss.")
+
+            if ord_val == 1:
+                res_norm = torch.linalg.vector_norm(res_seq, ord=1, dim=-1)
+                f_norm = torch.linalg.vector_norm(f_true, ord=1, dim=-1)
+                return torch.mean(res_norm / torch.clamp(f_norm, min=self.relative_eps))
+            elif ord_val == 2:
+                res_norm = torch.linalg.vector_norm(res_seq, ord=2, dim=-1)
+                f_norm = torch.linalg.vector_norm(f_true, ord=2, dim=-1)
+                return torch.mean(res_norm / torch.clamp(f_norm, min=self.relative_eps))
+
+            

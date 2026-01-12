@@ -13,7 +13,7 @@ DATASET_PATH = None               # path to .npz dataset; None -> config default
 LOSS_NORM = None                  # "l1", "l2", or "h1"; None -> config default
 LOSS_TYPE = None                  # "error" or "residual"; None -> config default
 SAVE_AFTER_TRAIN = True           # whether save the trained neural operator model
-USE_CONS = False
+USE_CONS = True
 PRINT_INTERVAL = 1000              # Interval of printing; DeepONet recommend 1000, FNS recommend 100;
 
 
@@ -37,8 +37,8 @@ def apply_training_overrides(cfg: Box,
         cfg.training.loss.norm = loss_norm
 
     if use_cons is not None:
-        cfg.training.fns_setting.hard_cons = USE_CONS
-        cfg.training.don_setting.hard_cons = USE_CONS
+        cfg.training.fns_setting.hard_cons = use_cons
+        cfg.training.don_setting.hard_cons = use_cons
 
     return cfg
 
@@ -63,9 +63,9 @@ def ckpt_dir(cfg: Box):
     loss_type, loss_norm = cfg.training.loss.type.lower(), cfg.training.loss.norm.lower()
 
     if operator_type == "fns":
-        use_hard_cons = cfg.training.don_setting.hard_cons
-    elif operator_type == "deeponet":
         use_hard_cons = cfg.training.fns_setting.hard_cons
+    elif operator_type == "deeponet":
+        use_hard_cons = cfg.training.don_setting.hard_cons
     else:
         raise KeyError("Invalid Operator Type. Only DeepONet and FNS are supported")
 
@@ -79,12 +79,13 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
                    loss_norm=LOSS_NORM,
                    dataset_path=DATASET_PATH,
                    trainer_type=TRAINER_TYPE,
+                   use_cons=USE_CONS,
                    save_after_train=SAVE_AFTER_TRAIN,
                    print_interval=PRINT_INTERVAL,
                    ):
     """Train a DeepONet model according to the given configuration"""
     cfg = load_config(config_wildcard)
-    cfg = apply_training_overrides(cfg, loss_type, loss_norm, dataset_path, trainer_type)
+    cfg = apply_training_overrides(cfg, loss_type, loss_norm, dataset_path, trainer_type, use_cons)
 
     # define the save path
     ckpt_base = ckpt_dir(cfg)
@@ -117,8 +118,8 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
 
 
 def batch_train(trainer_types=("static",),
-                loss_types=("error", "residual"),
-                loss_norms=("h1", "l2"),
+                loss_types=("residual", "error"),
+                loss_norms=("l2", "h1"),
                 config_wildcard=CONFIG_WILDCARD,
                 dataset_path=DATASET_PATH,
                 save_after_train=SAVE_AFTER_TRAIN,
