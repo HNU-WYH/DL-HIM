@@ -25,6 +25,15 @@ class FNS1d(NeuralOperatorBase):
         self.register_buffer("fns_x_nodes_torch",
                              torch.tensor(self.fns_x_nodes_np[1:-1, None], dtype=torch.float32, device=self.device))
 
+        # define a hard constraint H(x) = x * (x - 1.0)
+        # This forces the solution to be 0 at x=0 and x=1
+        self.use_hard_cons = config.training.don_setting.hard_cons
+
+        if self.use_hard_cons:
+            self.hard_constraints = lambda x: x * (1.0 - x)
+        else:
+            self.hard_constraints = None
+
         # Normalization buffers
         self.register_buffer("k_mean", torch.zeros(1, dtype=torch.float32, device= self.device))
         self.register_buffer("k_sigma", torch.zeros(1, dtype=torch.float32, device= self.device))
@@ -112,12 +121,13 @@ class FNS1d(NeuralOperatorBase):
         yi = group_conv(xr, wi) + group_conv(xi, wr)
         return torch.complex(yr, yi)
 
-    def forward(self, k_x, f_x, a_mats=None, compute_du: bool = False, **kwargs):
+    def forward(self, k_x, f_x, a_mats=None, compute_du: bool = False, trunk_input=None, **kwargs):
         """
         :param k_x: [B, N_grid].
         :param f_x: [B, N_grid-2] (Interior points).
         :param a_mats: Not used in FNS forward pass, kept for interface compatibility.
         :param compute_du: whether to compute the gradient of solution inside the model
+        :param trunk_input: e.g. shape = [query points, n dim] (query points = don grid points - 2)
         :return: dict with "u_pred" (the correction).
         """
         # Input shape handling to match meta-net requirements
@@ -176,6 +186,15 @@ class FNS1d(NeuralOperatorBase):
         u_pred = e_full[:, :, :M]  # [B, 1, M]
         u_pred = u_pred.squeeze(1)
 
+        # Apply hard constraints
+        if self.hard_constraints is not None:
+            if trunk_input is None: trunk_input = self.fns_x_nodes_torch
+            trunk_input = trunk_input.to(self.device)  # (num_x-2, 1)
+            H_x = self.hard_constraints(trunk_input).squeeze(-1)  # (num_x-2)
+            u_pred = u_pred * H_x  # (B, num_x-2) * (num_x-2) -> (B, num_x-2)
+        else:
+            u_pred = u_pred
+
         return {
             "u_pred": u_pred,
             "du_pred": None,
@@ -215,9 +234,51 @@ class FNS1d(NeuralOperatorBase):
         if k_x.shape[0] != f_x.shape[0]:
             raise ValueError(f"k_x and f_x must have the same batch size. Got {k_x.shape[0]} vs {f_x.shape[0]}")
 
+        # Interpolate if needed
+        batch_size = f_x.shape[0]
+        k_x, f_x, query_points = self._preprocess_input(k_x, x_k, f_x, x_f, batch_size)  # (D,), (D-2,), (G-2, 1)
+
+        # If query_points is None, use the internal x_nodes for predictions
+
+        if query_points.ndim == 1:
+            query_points = query_points[:, None]
+        query_points = torch.as_tensor(query_points, dtype=torch.float32, device=self.device)  # (G-2, 1)
+
         self.eval()
         with torch.no_grad():
-            return self.forward(k_x, f_x, **kwargs)["u_pred"].squeeze().cpu().detach().numpy()
+            return self.forward(k_x, f_x, trunk_input=query_points, **kwargs)["u_pred"].squeeze().cpu().detach().numpy()
+
+    def _preprocess_input(self, k_x, x_k, f_x, x_f, batch_size=None):
+        if batch_size is None:
+            batch_size = f_x.shape[0]
+
+        if k_x.shape[-1] != self.fns_num_x_nodes:
+            if isinstance(k_x, torch.Tensor):
+                k_x = k_x.detach().cpu().numpy()                                            # (G, )
+
+            if x_k is None:
+                x_k = np.linspace(0, 1, k_x.shape[-1])                                      # (G, )
+
+            k_x_interp = np.stack([np.interp(self.fns_x_nodes_np, x_k, k_x[i]) for i in range(batch_size)], axis=0)
+            k_x = torch.as_tensor(k_x_interp, dtype=torch.float32, device=self.device)
+        else:
+            k_x = torch.as_tensor(k_x, dtype=torch.float32, device=self.device)                    # (D,)
+
+        if f_x.shape[-1] != self.fns_num_x_nodes - 2:
+            if isinstance(f_x, torch.Tensor):
+                f_x = f_x.detach().cpu().numpy()                                                  # (G - 2,)
+
+            if x_f is None:
+                x_f = np.linspace(0, 1, f_x.shape[-1] + 2)[1:-1, None]                                  # (G - 2,)
+
+            f_x = torch.as_tensor(f_x, dtype=torch.float32, device=self.device)
+            x_f = torch.as_tensor(x_f, dtype=torch.float32, device=self.device)
+
+        else:
+            f_x = torch.as_tensor(f_x, dtype=torch.float32, device=self.device)             # (D - 2,)
+            x_f = self.fns_x_nodes_torch
+
+        return k_x, f_x, x_f     # (D,), (D - 2,), (G - 2, 1)
 
 
 def getActivationFunction(act: str):

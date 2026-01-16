@@ -46,7 +46,7 @@ class StaticTrainer:
         self.x_nodes = self.k_val = self.f_val = self.u_val = self.du_val = self.a_mats_val = None
 
         self._f_true_current = None
-        self._du_f_true_current = None
+        self._df_true_current = None
 
         self.optimizer = torch.optim.Adam(
             self.model.parameters(),
@@ -102,7 +102,7 @@ class StaticTrainer:
             elif self.loss_norm == "l1":
                 return self._relative_residual(res, f_true=self._f_true_current, ord_val=1)
             elif self.loss_norm == "h1":
-                self._du_f_true_current = self._grad_fd(self._f_true_current, x_nodes=self.x_nodes[1:-1])
+                self._df_true_current = self._grad_fd(self._f_true_current, x_nodes=self.x_nodes[1:-1])
                 return self._relative_residual(res, f_true=self._f_true_current, ord_val=2) + \
                     self.alpha * self._relative_residual(dres, f_true=self._df_true_current, ord_val=2)
             else:

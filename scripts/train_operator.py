@@ -118,10 +118,11 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
 
 
 def batch_train(trainer_types=("static",),
-                loss_types=("residual", "error"),
-                loss_norms=("l2", "h1"),
+                loss_types=("error",),
+                loss_norms=("l2",),
                 config_wildcard=CONFIG_WILDCARD,
                 dataset_path=DATASET_PATH,
+                use_cons_lists=(True, False),
                 save_after_train=SAVE_AFTER_TRAIN,
                 print_interval=PRINT_INTERVAL,
                 ):
@@ -129,24 +130,28 @@ def batch_train(trainer_types=("static",),
     Checkpoints will be saved under:
     ./checkpoints/{operator_type}_{problem_name}{dimension}/{cons_type}/{trainer_type}_{loss_type}_{loss_norm}/
     """
+
     for trainer_type in trainer_types:
         for loss_type in loss_types:
             for loss_norm in loss_norms:
-                print("=" * 80)
-                print(
-                    f"Start training: trainer={trainer_type}, "
-                    f"loss_type={loss_type}, loss_norm={loss_norm}"
-                )
-                print("=" * 80)
+                for use_cons in use_cons_lists:
+                    print("=" * 80)
+                    print(
+                        f"Start training: trainer={trainer_type}, "
+                        f"loss_type={loss_type}, loss_norm={loss_norm}, "
+                        f"Constraint: {str(use_cons)}"
+                    )
+                    print("=" * 80)
 
-                train_operator(config_wildcard=config_wildcard,
-                               loss_type=loss_type,
-                               loss_norm=loss_norm,
-                               dataset_path=dataset_path,
-                               trainer_type=trainer_type,
-                               save_after_train=save_after_train,
-                               print_interval=print_interval,
-                )
+                    train_operator(config_wildcard=config_wildcard,
+                                   loss_type=loss_type,
+                                   loss_norm=loss_norm,
+                                   dataset_path=dataset_path,
+                                   trainer_type=trainer_type,
+                                   use_cons=use_cons,
+                                   save_after_train=save_after_train,
+                                   print_interval=print_interval,
+                    )
 
 
 if __name__ == "__main__":
