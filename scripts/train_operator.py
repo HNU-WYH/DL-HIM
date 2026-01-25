@@ -13,7 +13,7 @@ DATASET_PATH = None               # path to .npz dataset; None -> config default
 LOSS_NORM = None                  # "l1", "l2", or "h1"; None -> config default
 LOSS_TYPE = None                  # "error" or "residual"; None -> config default
 SAVE_AFTER_TRAIN = True           # whether save the trained neural operator model
-USE_CONS = True
+USE_CONS = False
 PRINT_INTERVAL = 1000              # Interval of printing; DeepONet recommend 1000, FNS recommend 100;
 
 
@@ -117,12 +117,12 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
         print(f"Model and Loss saved to {os.path.dirname(cfg.model_save_path)}")
 
 
-def batch_train(trainer_types=("static",),
-                loss_types=("error",),
-                loss_norms=("l2",),
+def batch_train(trainer_types=("dynamic", ),
+                loss_types=("residual", ),
+                loss_norms=("h1", "l2", ),
                 config_wildcard=CONFIG_WILDCARD,
                 dataset_path=DATASET_PATH,
-                use_cons_lists=(True, False),
+                use_cons_lists=(True, ),
                 save_after_train=SAVE_AFTER_TRAIN,
                 print_interval=PRINT_INTERVAL,
                 ):

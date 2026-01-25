@@ -209,7 +209,7 @@ class DynamicTrainer:
                 loss = self._relative_residual(res_seq, f_true=self._f_true_current, ord_val=1)
             elif self.loss_norm == "h1":
                 dres_seq = self._grad_fd(res_seq, x_nodes=self.x_nodes[1:-1])
-                self._df_true_current = self._grad_fd(self._f_true_current, x_nodes=self.x_nodes[1:-1])
+                self._df_true_current = torch.gradient(self._f_true_current, spacing=(self.x_nodes[1:-1],), dim=-1)[0]
 
                 loss = self._relative_residual(res_seq, f_true=self._f_true_current, ord_val=2) + \
                        self.alpha * self._relative_residual(dres_seq, f_true=self._df_true_current, ord_val=2)

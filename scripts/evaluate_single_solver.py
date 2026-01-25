@@ -17,7 +17,7 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
 # In[]:
 # Pre-registered config for unresolved problem and testing data
-CONFIG_WILDCARD = "helmholtz1d*"                       # config filename wildcard
+CONFIG_WILDCARD = "diffusion*"                       # config filename wildcard
 
 TEST_GRID_NUM: Optional[int] = None                    # use dataset grid by default
 TEST_DATASET_PATH: Optional[str] = None                # default: cfg["dataset_path"] + "_test.npz"
@@ -31,8 +31,8 @@ TOL: Optional[float] = None                            # by default using the va
 # Pre-registered model checkpoints (use the keys inside CASES)
 # If Default is None, will raise an error
 MODEL_PATHS: Dict[str, Optional[str]] = {
-    "Default": "checkpoints/deeponet_diffusion1d/nocons/static_error_h1/diffusion_1D_Grid31_Ep10000_2026-01-11.pt",
-    # "Default": "checkpoints/DeepONet_diffusion1d/dynamic_residual_h1_cur/diffusion_1D_Grid31_Ep20000_2025-12-11.pt",
+    "Default": "checkpoints/fns_diffusion1d/nocons/static_error_l2/diffusion_1D_Grid31_Ep20000_2026-01-16.pt",
+    # "Default": "checkpoints/deeponet_diffusion1d/cons/static_error_l2/diffusion_1D_Grid31_Ep60001_2026-01-11.pt",
     # "Others": "can specify other model path and use them in the CASES configuration "
 }
 
@@ -44,8 +44,8 @@ CASES: List[Dict] = [
 
     {"label": "Jacobi", "mode": "numerical", "model": None, "numerical_method": "jacobi"},
 
-    # {"label": "Jacobi-AA", "mode": "numerical", "model": None, "numerical_method": "jacobi",
-    #  "numerical_update": "aa", "aa_m": 10},
+    {"label": "Jacobi-AA", "mode": "numerical", "model": None, "numerical_method": "jacobi",
+     "numerical_update": "aa", "aa_m": 10},
 
     {"label": "Hybrid-fixed", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
     "hybrid_ratio": 20, "neural_update": "fixed"},
@@ -53,11 +53,11 @@ CASES: List[Dict] = [
     {"label": "Hybrid-AA", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
      "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 10},
 
-    {"label": "Hybrid-AM", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
+    {"label": "Hybrid-PAAM", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
      "hybrid_ratio": 20, "neural_update": "am", "aa_m": 10},
 
-    # {"label": "Hybrid-Adaptive", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
-    # "hybrid_ratio": 20, "neural_update": "cg"},
+    {"label": "Hybrid-Adaptive", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
+    "hybrid_ratio": 20, "neural_update": "cg"},
 ]
 
 
