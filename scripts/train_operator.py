@@ -7,7 +7,7 @@ from src.utils.cfg_util import load_config
 from src.neural_operator import create_no
 
 
-CONFIG_WILDCARD = "diffusion*"  # config filename wildcard
+CONFIG_WILDCARD = "helmholtz*"  # config filename wildcard
 TRAINER_TYPE = "static"           # "static" or "dynamic"
 DATASET_PATH = None               # path to .npz dataset; None -> config default
 LOSS_NORM = None                  # "l1", "l2", or "h1"; None -> config default
@@ -118,11 +118,11 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
 
 
 def batch_train(trainer_types=("dynamic", ),
-                loss_types=("residual", ),
-                loss_norms=("h1", "l2", ),
+                loss_types=("residual", "error"),
+                loss_norms=("h1", "l2", "l1"),
                 config_wildcard=CONFIG_WILDCARD,
                 dataset_path=DATASET_PATH,
-                use_cons_lists=(True, ),
+                use_cons_lists=(False, ),
                 save_after_train=SAVE_AFTER_TRAIN,
                 print_interval=PRINT_INTERVAL,
                 ):
