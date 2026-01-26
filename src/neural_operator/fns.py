@@ -172,9 +172,9 @@ class FNS1d(NeuralOperatorBase):
         weights_theta = weights_theta[:, :, start:end]
         out_hat = r_hat * weights_theta * ik2
         out_hat = self.transition(
-            x_hat=out_hat, Ws=[W3.transpose(1, 2).flip(-1).conj(),
-                               W2.transpose(1, 2).flip(-1).conj(),
-                               W1.transpose(1, 2).flip(-1).conj()],
+            x_hat=out_hat, Ws=[W3.transpose(1, 2).conj(),    #.flip(-1).conj(),
+                               W2.transpose(1, 2).conj(),    #.flip(-1).conj(),
+                               W1.transpose(1, 2).conj()]    #.flip(-1).conj()],
         )
 
         # 4.4 Zero padding to original size
@@ -183,7 +183,7 @@ class FNS1d(NeuralOperatorBase):
         # 4.5 FFT to the error
         out_hat = torch.fft.ifftshift(out_hat, dim=-1)
         e_full = torch.fft.fft(out_hat, dim=-1).real
-        u_pred = e_full[:, :, :M]  # [B, 1, M]
+        u_pred = e_full[:, :, 1:M+1]  # [B, 1, M]
         u_pred = u_pred.squeeze(1)
 
         # Apply hard constraints
