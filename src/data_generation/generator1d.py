@@ -198,8 +198,8 @@ class TestDataGenerator(DataGenerator1d):
         self.func_num = self.testing_cfg.func_num if test_num is None else test_num
 
         if self.problem == "helmholtz":
-            self.threshold = self.testing_cfg.get("threshold", 0.6)
-            self.redundancy = max(1.0 / self.threshold, self.testing_cfg.get("redundancy", 1.6))
+            self.threshold = self.testing_cfg.get("threshold", 0.5)
+            self.redundancy = max(1.0 / self.threshold, self.testing_cfg.get("redundancy", 2.0))
             self.redundant_func_num = int(self.redundancy * self.func_num)
         else:
             self.redundant_func_num = self.func_num

@@ -23,17 +23,15 @@ TEST_GRID_NUM: Optional[int] = None                    # use dataset grid by def
 TEST_DATASET_PATH: Optional[str] = None                # default: cfg["dataset_path"] + "_test.npz"
 
 SAMPLE_INDICES: Optional[Sequence[int]] = np.arange(10)                  # validation indices to evaluate
-PLOT_SAMPLE_INDICES: Optional[Sequence[int]] = [9]  # indices in the testing data to visualize
+PLOT_SAMPLE_INDICES: Optional[Sequence[int]] = [8]  # indices in the testing data to visualize
 
-MAX_ITER: Optional[int] = None                         # Iteration / tolerance applied to every case
+MAX_ITER: Optional[int] = 700                         # Iteration / tolerance applied to every case
 TOL: Optional[float] = None                            # by default using the value in the yaml file
 
 # Pre-registered model checkpoints (use the keys inside CASES)
 # If Default is None, will raise an error
 MODEL_PATHS: Dict[str, Optional[str]] = {
-    "Default": "checkpoints/fns_diffusion1d/nocons/static_error_l2/diffusion_1D_Grid31_Ep20000_2026-01-16.pt",
-    # "Default": "checkpoints/deeponet_diffusion1d/cons/static_error_l2/diffusion_1D_Grid31_Ep60001_2026-01-11.pt",
-    # "Others": "can specify other model path and use them in the CASES configuration "
+    "Default": "checkpoints/deeponet_diffusion1d/cons/static_error_l2/diffusion_1D_Grid31_Ep20000_2026-01-25.pt",
 }
 
 # Evaluation plan: each dict describes one curve on the plot
@@ -42,22 +40,22 @@ CASES: List[Dict] = [
 
     # {"label": "Gauss-Seidel", "mode": "numerical", "model": None, "numerical_method": "gauss-seidel"},
 
-    {"label": "Jacobi", "mode": "numerical", "model": None, "numerical_method": "jacobi"},
+    # {"label": "Jacobi", "mode": "numerical", "model": None, "numerical_method": "jacobi"},
 
     {"label": "Jacobi-AA", "mode": "numerical", "model": None, "numerical_method": "jacobi",
-     "numerical_update": "aa", "aa_m": 10},
+     "numerical_update": "aa", "aa_m": 20},
 
     {"label": "Hybrid-fixed", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
     "hybrid_ratio": 20, "neural_update": "fixed"},
 
     {"label": "Hybrid-AA", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
-     "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 10},
+     "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 20},
 
-    {"label": "Hybrid-PAAM", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
-     "hybrid_ratio": 20, "neural_update": "am", "aa_m": 10},
+    {"label": "Hybrid-PAAA", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
+     "hybrid_ratio": 20, "neural_update": "am", "aa_m": 20},
 
-    {"label": "Hybrid-Adaptive", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
-    "hybrid_ratio": 20, "neural_update": "cg"},
+    # {"label": "Hybrid-Adaptive", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
+    # "hybrid_ratio": 20, "neural_update": "cg"},
 ]
 
 

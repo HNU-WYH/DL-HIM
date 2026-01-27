@@ -84,7 +84,7 @@ testing:
 # ============================
 training:
   mode: static                      # "static" or "dynamic"
-  operator_type: DeepONet           # Neural Operator Type ("DeepONet", "MIONet", "FNS")
+  operator_type: FNS           # Neural Operator Type ("DeepONet", "MIONet", "FNS")
   batch_size: 1024                  # batch size
   num_epoch: 20000                 # Epoch num
   lr: 0.0001                        # learning rate
@@ -119,7 +119,7 @@ training:
 # 4. Configs of the hybrid solver
 # ==========================================================
 solver:
-  type: Numerical                              # "Hybrid", "Numerical", "Neural"
+  type: Hybrid                              # "Hybrid", "Numerical", "Neural"
   numerical:
     method: jacobi                             # the numerical solver, "jacobi" or "GS"
     relaxation_factor:  0.6                    # the relaxation coefficient for the classical smoother

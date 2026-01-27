@@ -53,8 +53,8 @@ data:                                # The setting of mesh in training data
 # ============================
 testing:
   func_num: 30                       # size of testing data (number of k_x, while f_x = len(f_x.generator) * func_num)
-  threshold: 1.0                     # placeholder, meaningful only for Helmholtz equations
-  redundancy: 1.0                    # placeholder, meaningful only for Helmholtz equations
+  threshold: 0.6                     # placeholder, meaningful only for Helmholtz equations
+  redundancy: 2.0                    # placeholder, meaningful only for Helmholtz equations
 
   mesh:
     grid_num: 201                    # testing meshes differ from the training mesh such as [61, 241, 481]
@@ -84,7 +84,7 @@ testing:
 # ============================
 training:
   mode: static                      # "static" or "dynamic"
-  operator_type: DeepONet           # Neural Operator Type ("DeepONet", "MIONet", "FNS")
+  operator_type: FNS           # Neural Operator Type ("DeepONet", "MIONet", "FNS")
   batch_size: 1024                  # batch size
   num_epoch: 20000                  # Epoch num
   lr: 0.0001                        # learning rate
@@ -119,7 +119,7 @@ training:
 # 4. Configs of the hybrid solver
 # ==========================================================
 solver:
-  type: Numerical                              # "Hybrid", "Numerical", "Neural"
+  type: Hybrid                              # "Hybrid", "Numerical", "Neural"
   numerical:
     method: jacobi                             # the numerical solver, "jacobi" or "GS"
     relaxation_factor:  0.6                    # the relaxation coefficient for the classical smoother

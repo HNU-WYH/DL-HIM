@@ -14,17 +14,13 @@ from scripts.evaluate_single_solver import evaluate_case_on_sample, load_evaluat
 
 # In[]:
 CONFIG_WILDCARD = "diffusion1d*"
-CHECKPOINT_ROOT = "checkpoints/deeponet_diffusion1d"
+CHECKPOINT_ROOT = "checkpoints/fns_diffusion1d/nocons"
 
 TEST_GRID_NUM: Optional[int] = None                    # if not equal, interpolate to uniformly spaced TEST_GRID_NUM
 TEST_DATASET_PATH: Optional[str] = None                # path to .npz test dataset; None -> derive from the dataset path
 
-SAMPLE_INDICES: Optional[Iterable[int]] = np.arange(0, 90, 10)
-PLOT_SAMPLE_INDICES: Optional[Iterable[int]] = [0]
-
-MAX_ITER: Optional[int] = None                         # Iteration / tolerance applied to every case
-TOL: Optional[float] = None                            # by default using the value in the yaml file
-
+SAMPLE_INDICES: Optional[Iterable[int]] = None
+PLOT_SAMPLE_INDICES: Optional[Iterable[int]] = None
 
 # In[]:
 def discover_checkpoints(root: str = CHECKPOINT_ROOT) -> List[Tuple[str, str]]:
@@ -39,7 +35,7 @@ def discover_checkpoints(root: str = CHECKPOINT_ROOT) -> List[Tuple[str, str]]:
                 continue
             candidate_path = os.path.join(dirpath, filename)
             label = os.path.relpath(dirpath, root)
-            checkpoint_pairs.append((label, candidate_path))
+            checkpoint_pairs.append((label[6:], candidate_path))
     return checkpoint_pairs
 
 

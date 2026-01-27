@@ -3,5 +3,5 @@ from src.data_generation.generator1d import DataGenerator1d, TestDataGenerator
 
 # config = load_config("diffusion1d*")
 config = load_config("helmholtz1d*")
-DataGenerator1d(config).save(True)
+# DataGenerator1d(config).save(True)
 TestDataGenerator(config).save(True)
