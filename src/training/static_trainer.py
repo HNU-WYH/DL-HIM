@@ -1,6 +1,7 @@
 import os
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
+import gc
 import time
 import torch
 import numpy as np
@@ -328,3 +329,23 @@ class StaticTrainer:
                 f_norm = torch.linalg.vector_norm(f_true, ord=2, dim=-1)
                 return torch.mean(res_norm / torch.clamp(f_norm, min=self.relative_eps))
 
+    def reset_memory(self):
+        """
+        显式清理显存
+        """
+        # 1. 删除数据张量
+        del self.k_train, self.f_train, self.u_train, self.du_train, self.a_mats_train
+        del self.x_nodes, self.k_val, self.f_val, self.u_val, self.du_val, self.a_mats_val
+
+        # 2. 删除优化器
+        del self.optimizer
+
+        # 3. 断开模型引用
+        self.model = None
+
+        # 4. 强制 GC 和 清空 CUDA 缓存
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        print("Static Trainer Memory reset complete.")

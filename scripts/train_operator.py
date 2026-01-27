@@ -1,11 +1,13 @@
+import gc
 import os
+import torch
+
 import numpy as np
 from box import Box
 
+from src.neural_operator import create_no
 from src.training import StaticTrainer, DynamicTrainer
 from src.utils.cfg_util import load_config
-from src.neural_operator import create_no
-
 
 CONFIG_WILDCARD = "diffusion*"  # config filename wildcard
 TRAINER_TYPE = "static"           # "static" or "dynamic"
@@ -116,13 +118,35 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
         # print the saving information
         print(f"Model and Loss saved to {os.path.dirname(cfg.model_save_path)}")
 
+    # ================= [新增/修改部分] 内存清理逻辑 =================
+    print(f"Cleaning up memory for trainer type: {trainer_type}...")
 
-def batch_train(trainer_types=("static", ),
-                loss_types=("error",),
+    # 1. 调用 Trainer 内部的清理方法 (删除 tensor, optimizer 等)
+    if hasattr(trainer, "reset_memory"):
+        trainer.reset_memory()
+
+    # 2. 显式删除大对象引用
+    del trainer
+    del model
+    del dataset  # 这一点很重要，dataset 本身也是一个巨大的 numpy 对象
+
+    # 3. 强制 Python 垃圾回收
+    gc.collect()
+
+    # 4. 再次清空 PyTorch 缓存 (双重保险)
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    print("Memory cleanup finished.\n")
+    # ==============================================================
+
+
+def batch_train(trainer_types=("static", "dynamic", ),
+                loss_types=("residual",),
                 loss_norms=("l2",),
                 config_wildcard=CONFIG_WILDCARD,
                 dataset_path=DATASET_PATH,
-                use_cons_lists=(False, ),
+                use_cons_lists=(True, ),
                 save_after_train=SAVE_AFTER_TRAIN,
                 print_interval=PRINT_INTERVAL,
                 ):

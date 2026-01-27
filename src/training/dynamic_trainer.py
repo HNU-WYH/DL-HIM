@@ -1,6 +1,7 @@
 import os
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
+import gc
 import time
 import torch
 import warnings
@@ -427,3 +428,29 @@ class DynamicTrainer:
         plt.tight_layout()
         plt.savefig(fig_path, dpi=150)
         plt.close()
+
+    def reset_memory(self):
+        """
+        显式清理显存, 防止在连续运行时造成显存泄露或统计错误
+        """
+        # 1. 删除大尺寸的数据张量
+        # 我们使用 getattr(self, ..., None) 来安全地获取属性，防止报错
+        # 然后显式删除引用
+        del self.k_train, self.f_train, self.u_train, self.du_train, self.a_mats_train
+        del self.x_nodes, self.k_val, self.f_val, self.u_val, self.du_val, self.a_mats_val
+
+        # 2. 删除优化器 (优化器内部维护了动量等状态, 占用显存)
+        del self.optimizer
+
+        # 3. 删除模型引用 (如果模型是在外部定义的, 这里只是断开引用, 不会销毁外部模型)
+        # 但如果是为了彻底清空, 建议断开
+        self.model = None
+
+        # 4. 强制执行垃圾回收
+        gc.collect()
+
+        # 5. 清空 PyTorch 的显存缓存 (这是最关键的一步)
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        print("Dynamic Trainer Memory reset complete.")
