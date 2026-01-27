@@ -1,4 +1,7 @@
 import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
+import time
 import torch
 import warnings
 import numpy as np
@@ -313,6 +316,11 @@ class DynamicTrainer:
         """
         return training & validation losses
         """
+        if torch.cuda.is_available():
+            torch.cuda.reset_peak_memory_stats(self.device)
+            torch.cuda.synchronize(self.device)
+
+        start_time = time.time()
         for epoch in range(self.epochs):
             train_loss = self.train_epoch()
             val_loss, val_pred = self.val_epoch()
@@ -327,6 +335,24 @@ class DynamicTrainer:
 
             self._maybe_sole_validation(epoch, val_pred)
             self._maybe_rollout_validation(epoch)
+
+        if torch.cuda.is_available():
+            torch.cuda.synchronize(self.device)
+        end_time = time.time()
+        total_time = end_time - start_time
+
+        print("\n" + "=" * 50)
+        print(f" (Dynamic) Time and Memory Usage Report")
+        print(f" Horizon Setting       : K={self.max_horizon}")
+        print(f" Total Wall-clock Time : {total_time:.4f} sec")
+        print(f" Avg Time per Epoch    : {total_time / self.epochs:.4f} sec")
+
+        if torch.cuda.is_available():
+            peak_bytes = torch.cuda.max_memory_allocated(self.device)
+            peak_mb = peak_bytes / (1024 ** 2)
+            print(f" Peak GPU Memory       : {peak_mb:.2f} MB")
+        print("=" * 50 + "\n")
+
 
         self.train_losses, self.val_losses = np.array(self.train_losses), np.array(self.val_losses)
         self._plot_loss_history(out_path=self.plot_save_dir)
