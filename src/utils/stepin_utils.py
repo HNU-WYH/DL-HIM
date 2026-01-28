@@ -221,7 +221,7 @@ class AndersonMixing:
         self.hist_diff_g = []
         self.hist_diff_r = []
 
-def adaptive_step_size_cg(a_mat: np.ndarray, p_k: np.ndarray, r_k: np.ndarray, eps: float = 1e-16):
+def adaptive_step_size_cg(a_mat: np.ndarray, p_k: np.ndarray, r_k: np.ndarray, eps: float = 1e-12):
     """
     Computes optimal step size for CG: alpha = (p.T @ r) / (p.T @ A @ p)
 

@@ -106,6 +106,7 @@ training:
   fns_setting:
     act: "gelu"
     hidden: 32
+    meta_lambda: fno                # "fno" or "unet"
     hard_cons: False                # whether to apply the hard constraints in the neural network
 
   dynamic:                          # dynamic training settings (not used in static)
