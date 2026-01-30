@@ -17,13 +17,14 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
 # In[]:
 # Pre-registered config for unresolved problem and testing data
-CONFIG_WILDCARD = "diffusion*"                       # config filename wildcard
+# CONFIG_WILDCARD = "diffusion*"                       # config filename wildcard
+CONFIG_WILDCARD = "helmholtz*"                       # config filename wildcard
 
-TEST_GRID_NUM: Optional[int] = None                    # use dataset grid by default
+TEST_GRID_NUM: Optional[int] = 201                    # use dataset grid by default
 TEST_DATASET_PATH: Optional[str] = None                # default: cfg["dataset_path"] + "_test.npz"
 
-SAMPLE_INDICES: Optional[Sequence[int]] = np.arange(10)                  # validation indices to evaluate
-PLOT_SAMPLE_INDICES: Optional[Sequence[int]] = [8]  # indices in the testing data to visualize
+SAMPLE_INDICES: Optional[Sequence[int]] = None                  # validation indices to evaluate
+PLOT_SAMPLE_INDICES: Optional[Sequence[int]] = None  # indices in the testing data to visualize
 
 MAX_ITER: Optional[int] = 700                         # Iteration / tolerance applied to every case
 TOL: Optional[float] = None                            # by default using the value in the yaml file
@@ -31,7 +32,9 @@ TOL: Optional[float] = None                            # by default using the va
 # Pre-registered model checkpoints (use the keys inside CASES)
 # If Default is None, will raise an error
 MODEL_PATHS: Dict[str, Optional[str]] = {
-    "Default": "checkpoints/deeponet_diffusion1d/cons/static_error_l2/diffusion_1D_Grid31_Ep20000_2026-01-25.pt",
+    # "Default": "./checkpoints/deeponet_diffusion1d/dynamic_residual_l2/diffusion_1D_Grid31_Ep20000_2026-01-26.pt",
+    "Default": "./checkpoints/deeponet_helmholtz1d/dynamic_residual_l2/helmholtz_1D_Grid31_Ep20000_2026-01-26.pt",
+    # "Default": "./checkpoints/fns_diffusion1d/dynamic_error_l2/diffusion_1D_Grid31_Ep10000_2025-12-19.pt",
 }
 
 # Evaluation plan: each dict describes one curve on the plot
@@ -40,22 +43,22 @@ CASES: List[Dict] = [
 
     # {"label": "Gauss-Seidel", "mode": "numerical", "model": None, "numerical_method": "gauss-seidel"},
 
-    # {"label": "Jacobi", "mode": "numerical", "model": None, "numerical_method": "jacobi"},
+    {"label": "Jacobi", "mode": "numerical", "model": None, "numerical_method": "jacobi"},
 
     {"label": "Jacobi-AA", "mode": "numerical", "model": None, "numerical_method": "jacobi",
-     "numerical_update": "aa", "aa_m": 20},
+     "numerical_update": "aa", "aa_m": 10},
 
-    {"label": "Hybrid-fixed", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
+    {"label": "HINTS-Fixed", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
     "hybrid_ratio": 20, "neural_update": "fixed"},
 
-    {"label": "Hybrid-AA", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
-     "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 20},
+    {"label": "HINTS-AA", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
+     "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 10},
 
-    {"label": "Hybrid-PAAA", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
-     "hybrid_ratio": 20, "neural_update": "am", "aa_m": 20},
+    {"label": "HINTS-PAAA", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
+     "hybrid_ratio": 20, "neural_update": "am", "aa_m": 10},
 
-    # {"label": "Hybrid-Adaptive", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
-    # "hybrid_ratio": 20, "neural_update": "cg"},
+    {"label": "HINTS-Adaptive", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
+    "hybrid_ratio": 20, "neural_update": "cg"},
 ]
 
 
@@ -85,7 +88,6 @@ def load_evaluation_dataset(cfg: Box, test_path=TEST_DATASET_PATH) -> Tuple[np.l
     return np.load(dataset_path), False
 
 
-# 这个进行了大概记得改回来
 def select_test_sample(grid_num: Optional[int], dataset,
                        test_sample_indices: List[int] = None,
                        use_test_dataset: bool = False):
@@ -98,11 +100,11 @@ def select_test_sample(grid_num: Optional[int], dataset,
     x_before = dataset["x_data"]
     k_key = "k_data" if use_test_dataset else "k_data_val"
     f_key = "f_data" if use_test_dataset else "f_data_val"
-    u_key = "u_data" if use_test_dataset else "u_data_val"
+    # u_key = "u_data" if use_test_dataset else "u_data_val"
 
     k = dataset[k_key][test_sample_indices]
     f = dataset[f_key][test_sample_indices]
-    u = dataset[u_key][test_sample_indices]
+    # u = dataset[u_key][test_sample_indices]
     # a_mats = dataset["a_mats"][test_sample_indices]
     # res = np.mean(f - (a_mats @ u[...,None]).squeeze(-1))
 
@@ -114,12 +116,12 @@ def select_test_sample(grid_num: Optional[int], dataset,
     if grid_num and len(x_before) != len(x_after):
         k = [np.interp(x_after, x_before, k[i]) for i in range(k.shape[0])]
         f = [np.interp(x_after[1:-1], x_before[1:-1], f[i]) for i in range(f.shape[0])]
-        u = [np.interp(x_after[1:-1], x_before[1:-1], u[i]) for i in range(u.shape[0])]
+        # u = [np.interp(x_after[1:-1], x_before[1:-1], u[i]) for i in range(u.shape[0])]
 
     if return_list:
-        return np.array(k), np.array(f), x_after, np.array(u)
+        return np.array(k), np.array(f), x_after # , np.array(u)
     else:
-        return k[0], f[0], x_after, u[0]
+        return k[0], f[0], x_after, # u[0]
 
 
 def resolve_model_path(model_key: Optional[str], model_paths=MODEL_PATHS) -> Optional[str]:
@@ -291,8 +293,7 @@ def collect_history(solver: HybridSolver,
 
 
 def evaluate_case_on_sample(base_cfg: Box, case: Dict,
-                            k_x: np.ndarray, f_inner: np.ndarray,
-                            u_gt_inner: np.ndarray, x_nodes: np.ndarray,
+                            k_x: np.ndarray, f_inner: np.ndarray, x_nodes: np.ndarray,
                             max_iter: int = MAX_ITER, tol: float = TOL
                             ) -> Tuple[np.ndarray, np.ndarray]:
 
@@ -309,13 +310,15 @@ def evaluate_case_on_sample(base_cfg: Box, case: Dict,
         cp_path=cfg.get("model_load_path"),
     )
 
+    u_gt_inner = np.linalg.solve(solver.A_inner, solver.f_inner)
+
     res_hist, err_hist, u_curr = collect_history(solver, u_gt_inner,
                                                  mode=case.get("mode", "hybrid"),
                                                  max_iter=max_iter, tol=tol,
                                                  one_shot=case.get("one_shot", False),
                                                  aa_m=case.get("aa_m"),
                                                  )
-    return err_hist, res_hist, u_curr
+    return err_hist, res_hist, u_curr, u_gt_inner
 
 
 def average_histories(histories: Iterable[np.ndarray]) -> np.ndarray:
@@ -347,9 +350,9 @@ def run_evaluation(plot_indices: Optional[Sequence[int]] = None,
         raise IndexError("Plot sample indices must be smaller than the validation indices")
 
     # get the unresolved testing data and corresponding reference solution
-    k_val, f_val, x_val, u_val = select_test_sample(grid_num=test_grid_num,
-                                                    dataset=data, test_sample_indices=sample_indices,
-                                                    use_test_dataset=use_test_dataset)
+    k_val, f_val, x_val = select_test_sample(grid_num=test_grid_num, dataset=data,
+                                             test_sample_indices=sample_indices,
+                                             use_test_dataset=use_test_dataset)
 
     # Initialize the result for loss, error and iters
     case_results = {case["label"]: {"errors": [], "residuals": [], "iters": None} for case in cases}
@@ -360,9 +363,10 @@ def run_evaluation(plot_indices: Optional[Sequence[int]] = None,
     # Evaluate every sample in the sampled indices
     for sample_idx, _ in enumerate(tqdm(sample_indices, desc="Samples")):
         for case in cases:
-            err_hist, res_hist, u_curr = evaluate_case_on_sample(cfg, case,
-                                                                 k_val[sample_idx], f_val[sample_idx],
-                                                                 u_val[sample_idx], x_val,
+            err_hist, res_hist, u_curr, u_true = evaluate_case_on_sample(cfg, case,
+                                                                 k_val[sample_idx],
+                                                                 f_val[sample_idx],
+                                                                 x_val,
             )
 
             case_results[case["label"]]["errors"].append(err_hist)
@@ -370,7 +374,7 @@ def run_evaluation(plot_indices: Optional[Sequence[int]] = None,
             case_results[case["label"]]["iters"] = np.arange(1, len(err_hist) + 1)
 
             if sample_idx in plot_predictions:
-                plot_predictions[sample_idx][case["label"]] = {"u_true": u_val[sample_idx], "u_pred": u_curr,
+                plot_predictions[sample_idx][case["label"]] = {"u_true": u_true[sample_idx], "u_pred": u_curr,
                                                                "x_nodes": x_val[1:-1], "error": err_hist[-1]}
 
     avg_results = {}
@@ -411,18 +415,38 @@ def run_evaluation(plot_indices: Optional[Sequence[int]] = None,
 if __name__ == "__main__":
     avg_results3 = run_evaluation(plot_indices=PLOT_SAMPLE_INDICES)
     #
-    plt.figure(figsize=(6, 3.8))
+    #
+    #
+    #
+    plt.figure(figsize=(6, 7))
+    plt.subplot(2, 1, 1)
     for label, vals in avg_results3.items():
-        if label == "Hybrid-CG":
-            label = "Hybrid-Adaptive"
+        if label == "HINTS-CG":
+            label = "HINTS-Adaptive"
+        plt.semilogy(vals["iter"], vals["error"], label=label)
+    plt.title("Average Error Norm vs Iteration")
+    plt.xlabel("Iteration")
+    plt.ylabel("$\ell_2$ Norm of Error")
+    plt.grid(True)
+    # plt.legend(
+    #     loc='upper center',  # 图例自己的对齐点（上边缘居中）
+    #     bbox_to_anchor=(0.5, -0.2),  # 图例相对于坐标轴的位置 (x=0.5居中, y=-0.15在轴下方)
+    #     ncol=3,  # 设置列数，建议设为3或5，让图例横向排列更美观
+    #     frameon=True  # 是否显示图例边框
+    # )
+
+    plt.subplot(2, 1, 2)
+    for label, vals in avg_results3.items():
+        if label == "HINTS-CG":
+            label = "HINTS-Adaptive"
         plt.semilogy(vals["iter"], vals["residual"], label=label)
     plt.title("Average Residual Norm vs Iteration")
-    plt.xlabel("DL-HIM Iteration")
+    plt.xlabel("Iteration")
     plt.ylabel("$\ell_2$ Norm of Residual")
     plt.grid(True)
     plt.legend(
         loc='upper center',  # 图例自己的对齐点（上边缘居中）
-        bbox_to_anchor=(0.5, -0.2),  # 图例相对于坐标轴的位置 (x=0.5居中, y=-0.15在轴下方)
+        bbox_to_anchor=(0.5, -0.20),  # 图例相对于坐标轴的位置 (x=0.5居中, y=-0.15在轴下方)
         ncol=3,  # 设置列数，建议设为3或5，让图例横向排列更美观
         frameon=True  # 是否显示图例边框
     )

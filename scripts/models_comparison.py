@@ -13,10 +13,13 @@ from scripts.evaluate_single_solver import evaluate_case_on_sample, load_evaluat
 
 
 # In[]:
-CONFIG_WILDCARD = "diffusion1d*"
-CHECKPOINT_ROOT = "checkpoints/fns_diffusion1d/nocons"
+# CONFIG_WILDCARD = "diffusion1d*"
+CONFIG_WILDCARD = "helmholtz1d*"
+# CHECKPOINT_ROOT = "checkpoints/fns_diffusion1d/nocons"
+# CHECKPOINT_ROOT = "checkpoints/deeponet_diffusion1d/cons"
+CHECKPOINT_ROOT = "checkpoints/deeponet_helmholtz1d/cons"
 
-TEST_GRID_NUM: Optional[int] = None                    # if not equal, interpolate to uniformly spaced TEST_GRID_NUM
+TEST_GRID_NUM: Optional[int] = 201                    # if not equal, interpolate to uniformly spaced TEST_GRID_NUM
 TEST_DATASET_PATH: Optional[str] = None                # path to .npz test dataset; None -> derive from the dataset path
 
 SAMPLE_INDICES: Optional[Iterable[int]] = None
@@ -80,7 +83,7 @@ def compare_checkpoints(
         raise IndexError("Plot sample indices must be smaller than the validation indices")
 
     # get the unresolved testing data and corresponding reference solution
-    k_samples, f_samples, x_nodes, u_samples = select_test_sample(
+    k_samples, f_samples, x_nodes = select_test_sample(
         TEST_GRID_NUM or len(data["x_data"]), data, sample_indices, use_test_dataset=use_test_dataset
     )
 
@@ -92,8 +95,8 @@ def compare_checkpoints(
     plot_predictions = {idx: {} for idx in plot_indices}
 
     for case in tqdm(checkpoint_cases, desc="Checkpoints"):
-        for dataset_idx, (k_sample, f_sample, u_sample) in enumerate(zip(k_samples, f_samples, u_samples)):
-            err_hist, res_hist, u_curr = evaluate_case_on_sample(cfg, case, k_sample, f_sample, u_sample, x_nodes, )
+        for dataset_idx, (k_sample, f_sample) in enumerate(zip(k_samples, f_samples)):
+            err_hist, res_hist, u_curr, u_true = evaluate_case_on_sample(cfg, case, k_sample, f_sample, x_nodes)
 
             case_results[case["label"]]["errors"].append(err_hist)
             case_results[case["label"]]["residuals"].append(res_hist)
@@ -101,7 +104,7 @@ def compare_checkpoints(
 
             if dataset_idx in plot_indices:
                 plot_predictions[dataset_idx][case["label"]] = {
-                    "u_true": u_sample,
+                    "u_true": u_true,
                     "u_pred": u_curr,
                     "x_nodes": x_nodes[1:-1],
                     "error": err_hist[-1],
@@ -144,26 +147,34 @@ def compare_checkpoints(
 if __name__ == "__main__":
     avg_results3 = compare_checkpoints(plot_indices=PLOT_SAMPLE_INDICES)
 
-    plt.figure(figsize=(6, 3))
-    # plt.subplot(1, 2, 1)
-    # for label, vals in avg_results3.items():
-    #     plt.semilogy(vals["iter"], vals["error"], label=label)
-    # plt.title("Error vs Iteration (dataset average)")
-    # plt.xlabel("Iteration")
-    # plt.ylabel("L2 Error Norm")
-    # plt.grid(True)
+    plt.figure(figsize=(6, 7))
+    plt.subplot(2, 1, 1)
+    for label, vals in avg_results3.items():
+        label_list = label.split("_")
+        label = " ".join(label_list[:])
+        plt.semilogy(vals["iter"], vals["error"], label=label)
+    plt.title("Error vs Iteration (dataset average)")
+    plt.xlabel("Iteration")
+    plt.ylabel("L2 Error Norm")
+    plt.grid(True)
     # plt.legend()
-    #
-    # plt.subplot(1, 2, 2)
+
+    plt.subplot(2, 1, 2)
+    # plt.figure(figsize=(6, 3))
     for label, vals in avg_results3.items():
         label_list = label.split("_")
         label = " ".join(label_list[:])
         plt.semilogy(vals["iter"], vals["residual"], label=label)
     plt.title("Average Residual Norm vs Iteration")
-    plt.xlabel("DL-HIM Iteration")
+    plt.xlabel("Iteration")
     plt.ylabel(r"$\ell_2$ Norm of Residual")
     plt.grid(True)
-    plt.legend(ncol=2)
+    plt.legend(
+        loc='upper center',  # 图例自己的对齐点（上边缘居中）
+        bbox_to_anchor=(0.5, -0.20),  # 图例相对于坐标轴的位置 (x=0.5居中, y=-0.15在轴下方)
+        ncol=3,  # 设置列数，建议设为3或5，让图例横向排列更美观
+        frameon=True
+    )
 
     plt.tight_layout()
     plt.show()

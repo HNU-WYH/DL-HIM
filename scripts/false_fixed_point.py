@@ -13,17 +13,19 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 # =====================
 CONFIG_WILDCARD = "diffusion*"
 # 使用 DeepONet 模型，它在处理高分辨率网格时的频谱偏差最容易产生伪不动点
+MODEL_TYPE = "DeepONet"
 MODEL_PATH = "checkpoints/deeponet_diffusion1d/cons/static_error_l2/diffusion_1D_Grid31_Ep20000_2026-01-25.pt"
 
 TEST_GRID_NUM = 801  # 高分辨率网格以放大频谱鸿沟
 SAMPLE_INDEX = 8  # 选取典型样本
-MAX_ITER_CYCLES = 100  # 混合周期的总数
+MAX_ITER_CYCLES = 36  # 混合周期的总数
 
 
 def run_analysis():
     # 1. 加载配置与数据
     cfg = load_config(CONFIG_WILDCARD)
     cfg["model_load_path"] = MODEL_PATH
+    cfg.training.operator_type = MODEL_TYPE
 
     base, ext = os.path.splitext(cfg["dataset_path"])
     test_path = f"{base}_test{ext}"
@@ -94,39 +96,38 @@ def run_analysis():
     # 6. 绘图 (双 Y 轴对比)
     # ---------------------------------------------------------
     iters = np.arange(MAX_ITER_CYCLES)
-    fig, ax1 = plt.subplots(figsize=(10, 6))
+    fig, ax1 = plt.subplots(figsize=(6, 4))
 
     # 左轴: 混合迭代的更新量 Delta
     # 展示 $\|\delta_k\| \to 0$ 诱导的数学收敛假象
     color_delta = 'tab:blue'
-    ax1.set_xlabel('DL-HIM Cycle', fontsize=16)
-    ax1.set_ylabel(r'Hybrid Update Norm $\|\delta_k\| = \|u_{k+1} - u_k\|_2$', color=color_delta, fontsize=16)
-    ax1.semilogy(iters, hybrid_delta, 'o-', color=color_delta, label='Update Norm ($\|\delta_k\|$)', alpha=0.6)
+    ax1.set_xlabel('Iteration') #, fontsize=16)
+    ax1.set_ylabel(r'Hybrid Update Norm $\|\delta_k\| = \|u_{k+1} - u_k\|_2$', color=color_delta) #, fontsize=16)
+    ax1.semilogy(20*iters, hybrid_delta, '-', color=color_delta, label='Update Norm ($\|\delta_k\|$)') #, alpha=0.6)
     ax1.tick_params(axis='y', labelcolor=color_delta)
-    ax1.tick_params(axis='both', labelsize=12)
-    ax1.grid(True, which="both", ls="-", alpha=0.2)
+    ax1.tick_params(axis='both') #, labelsize=12)
+    ax1.grid(True)
 
     # 右轴: 物理残差对比与真实误差
     # 展示即使更新量消失，物理误差依然很大且高于 Jacobi 某些阶段
     ax2 = ax1.twinx()
-    ax2.set_ylabel('Residual Norms $\|r_k\|=\|f-Au_k\|$', color='r', fontsize=16)
+    ax2.set_ylabel('Residual Norms $\|r_k\|=\|f-Au_k\|$', color='r') #, fontsize=16)
     ax2.set_ylim([0.5*1e-3, 0.9*1e2])
-    ax2.semilogy(iters, hybrid_res, 'r-', linewidth=2.0, label='Physical Residual ($\|r_k\|$)', alpha=0.8)
+    ax2.semilogy(20*iters, hybrid_res, 'r-', label='Physical Residual ($\|r_k\|$)', alpha=0.8) #, linewidth=2.0)
     # ax2.semilogy(iters, jacobi_res, 'r:', linewidth=2.0, label='Pure Jacobi Residual')
     # ax2.semilogy(iters, hybrid_err, color='gray', linestyle='-.', linewidth=1.5, label='Hybrid Error to Ref', alpha=0.5)
-    ax2.tick_params(axis='y', labelcolor='r', labelsize=12)
+    ax2.tick_params(axis='y', labelcolor='r') #, labelsize=12)
 
-    plt.title(f'the False Fixed Point of DL-HIMs on 1D Diffusion Equation)',
-              fontsize=18)
+    plt.title(f'the False Fixed Point of DL-HIMs') #, fontsize=18)
 
     # 图例合并
     lines1, labels1 = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right', fontsize=16)
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right') #, fontsize=16)
 
     fig.tight_layout()
     os.makedirs("figure", exist_ok=True)
-    save_path = "figure/false_fixed_point_vs_jacobi.png"
+    save_path = "figure/false_fixed_point.png"
     plt.savefig(save_path, dpi=300)
     print(f"Comparison plot saved to {save_path}")
     plt.show()
