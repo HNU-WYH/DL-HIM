@@ -516,7 +516,7 @@ class FNOMetaLambda1D(nn.Module):
         t = torch.linspace(0.0, 1.0, Lfft, device=device).unsqueeze(-1)
         feats = [t]
         for k in range(self.Lfreq):
-            w = (2.0 ** k) * 2.0 * math.pi
+            w = (2.0 ** k) * 2.0 * torch.pi
             feats.append(torch.sin(w * t))
             feats.append(torch.cos(w * t))
         return torch.cat(feats, dim=-1)  # [Lfft, 2*Lfreq + 1]
