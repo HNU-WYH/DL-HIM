@@ -118,22 +118,18 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
         # print the saving information
         print(f"Model and Loss saved to {os.path.dirname(cfg.model_save_path)}")
 
-    # ================= [新增/修改部分] 内存清理逻辑 =================
+    # ===============================================================
     print(f"Cleaning up memory for trainer type: {trainer_type}...")
 
-    # 1. 调用 Trainer 内部的清理方法 (删除 tensor, optimizer 等)
     if hasattr(trainer, "reset_memory"):
         trainer.reset_memory()
 
-    # 2. 显式删除大对象引用
     del trainer
     del model
-    del dataset  # 这一点很重要，dataset 本身也是一个巨大的 numpy 对象
+    del dataset
 
-    # 3. 强制 Python 垃圾回收
     gc.collect()
 
-    # 4. 再次清空 PyTorch 缓存 (双重保险)
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 

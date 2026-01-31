@@ -251,7 +251,6 @@ def adaptive_step_size_cg(a_mat: np.ndarray, p_k: np.ndarray, r_k: np.ndarray, e
             return vec[None, ...], True
 
         # Case 3: [B, N] -> Batched -> [B, N, 1]
-        # 判断依据：维度是2，但最后一维是 N (不是1)
         if vec.ndim == 2:
             return vec[..., None], False
 
@@ -273,7 +272,7 @@ def adaptive_step_size_cg(a_mat: np.ndarray, p_k: np.ndarray, r_k: np.ndarray, e
     # compute Alpha
     alpha_k = numer / (denom + eps)             # [B, 1, 1]
 
-    # 4. 还原输出形状
+    # 4. Return the initial shape
     if is_single:
         return alpha_k.item()                   # return scalar
     else:

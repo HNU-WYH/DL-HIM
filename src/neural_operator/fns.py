@@ -82,9 +82,6 @@ class FNS1d(NeuralOperatorBase):
     def ik2_id(M: int, device, dtype) -> torch.Tensor:
         L = 2 * (M + 1)
 
-        # 对于偶数的DFT, 一般习惯 [-L/2, L/2 - 1], 需要周期性, 因此不能对称
-        # 负频率: -1 ~ -L/2 (一共L/2); 正频率: 0 ~ L/2-1 (一共L/2)
-        # (-L/2)mod(L) = (L/2)%L 更好可以接到 (L/2-1)后面
         k = torch.arange(-M-1, M+1, device=device, dtype=dtype) * torch.pi
         nz = k != 0
 
@@ -109,7 +106,7 @@ class FNS1d(NeuralOperatorBase):
             x: [B, Cin, L] complex
             w: [B, Cout, Cin, K] complex
             return: [B, Cout, L] complex
-            """
+        """
         assert torch.is_complex(x) and torch.is_complex(w)
         B, Cin, L = x.shape
         B2, Cout, Cin2, K = w.shape
@@ -170,10 +167,10 @@ class FNS1d(NeuralOperatorBase):
         end = L_ext // 2 + L_ext // 8 + 1
 
         if self.arch_type == "fno":
-            # FNO 模式：直接在频域查询目标长度，输出即为 [B, 1, band_len]
+            # FNO
             weights_theta = self.meta_lambda(k_norm, band_len)
         else:
-            # UNet 模式：按照你的要求，先生成全长，再进行中心截断
+            # UNet
             weights_theta = self.meta_lambda(k_norm, L_ext)
             weights_theta = weights_theta[:, :, start:end]
 
@@ -414,8 +411,8 @@ class UNet1D(nn.Module):
 
     def forward(self, coef_signal: torch.Tensor, Lfft: int) -> torch.Tensor:
         """
-        coef_signal: [B, 1, Lc] real
-        Lfft: Target length in frequency domain
+            coef_signal: [B, 1, Lc] real
+            Lfft: Target length in frequency domain
         """
         # mapping from L to L_ext
         x0 = self.in_conv(coef_signal)
@@ -441,18 +438,12 @@ class UNet1D(nn.Module):
 
 
 class SpectralConv1d(nn.Module):
-    """
-    1D 谱卷积层：在频域学习固定模态的权重，实现分辨率无关性。
-    参考 sFNO 的截断逻辑。
-    """
-
     def __init__(self, in_channels: int, out_channels: int, modes: int):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.modes = modes
 
-        # 初始化复数权重：绑定到低频 modes 上
         scale = 1.0 / (in_channels * out_channels)
         self.weights = nn.Parameter(
             scale * torch.randn(in_channels, out_channels, modes, dtype=torch.cfloat)
@@ -460,59 +451,48 @@ class SpectralConv1d(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         batchsize = x.shape[0]
-        # 1. 变换到频域
+
         x_ft = torch.fft.rfft(x, dim=-1)
 
-        # 2. 创建输出画布并执行频域复数矩阵乘法
         out_ft = torch.zeros(batchsize, self.out_channels, x.size(-1) // 2 + 1,
                              device=x.device, dtype=torch.cfloat)
 
-        # 截断：只处理前 self.modes 个低频模态
         k = min(self.modes, x_ft.shape[-1])
         out_ft[:, :, :k] = torch.einsum("bik,iok->bok", x_ft[:, :, :k], self.weights[:, :, :k])
 
-        # 3. 投影回物理空间
         x = torch.fft.irfft(out_ft, n=x.size(-1))
         return x
 
 
 class FNOMetaLambda1D(nn.Module):
     """
-    基于 FNO 架构的 Meta-Network。
-    结合了 FNS.py 的频率嵌入查询与 sFNO 的谱卷积。
+        Meta-Network based on FNO。
     """
-
     def __init__(self, act="gelu", hidden=32, modes=16, Lfreq=4):
         super().__init__()
         self.act_fn = getActivationFunction(act)
         self.hidden = hidden
         self.Lfreq = Lfreq
 
-        # 1. Lifting: 投影到高维特征空间
+        # 1. Lifting
         self.lifting = nn.Conv1d(1, hidden, 1)
 
-        # 2. Fourier Layers: 谱卷积增强特征提取
+        # 2. Fourier Layers
         self.spec1 = SpectralConv1d(hidden, hidden, modes)
         self.spec2 = SpectralConv1d(hidden, hidden, modes)
 
-        # 3. Pointwise paths: 空间域补足局部特征
+        # 3. Pointwise paths
         self.w1 = nn.Conv1d(hidden, hidden, 1)
         self.w2 = nn.Conv1d(hidden, hidden, 1)
 
-        # 4. Frequency Query Head: 实现跨网格的核心
-        # 输入：[B, Hidden] (全局特征) + [B, Lfreq*2+1] (频率坐标嵌入)
+        # 4. Frequency Query Head
         self.query_head = nn.Sequential(
             nn.Linear(hidden + (2 * Lfreq + 1), hidden),
             self.act_fn,
-            nn.Linear(hidden, 2)  # 输出实部和虚部
+            nn.Linear(hidden, 2)
         )
 
     def _get_freq_embedding(self, Lfft: int, device: torch.device) -> torch.Tensor:
-        """
-        生成频率坐标嵌入，将 [0, 1] 映射到正弦基函数。
-        参考 FNS.py 的 _freq_embed。
-        """
-        # 标准化频率轴 t ∈ [0, 1]
         t = torch.linspace(0.0, 1.0, Lfft, device=device).unsqueeze(-1)
         feats = [t]
         for k in range(self.Lfreq):
@@ -522,14 +502,9 @@ class FNOMetaLambda1D(nn.Module):
         return torch.cat(feats, dim=-1)  # [Lfft, 2*Lfreq + 1]
 
     def forward(self, coef_signal: torch.Tensor, Lfft: int) -> torch.Tensor:
-        """
-        接口兼容 UNet1D:
-        coef_signal: [B, 1, Lc] 实数系数
-        Lfft: 目标频谱长度 (由 forward 控制，对应 band 长度)
-        """
         B, _, Lc = coef_signal.shape
 
-        # 1. 空间域特征提取
+        # Lifting
         x = self.lifting(coef_signal)
 
         # FNO Block 1
@@ -540,23 +515,20 @@ class FNOMetaLambda1D(nn.Module):
         x2 = self.spec2(x) + self.w2(x)
         x = self.act_fn(x2)
 
-        # 2. 全局池化：提取物理场的全局环境特征 z
+        # Pooling
         z = torch.mean(x, dim=-1)  # [B, hidden]
 
-        # 3. 频率查询：根据 Lfft 生成对应长度的权重
         # phi: [Lfft, 2*Lfreq+1]
         phi = self._get_freq_embedding(Lfft, coef_signal.device)
 
-        # 拼接全局特征与频率嵌入
         # z_rep: [B, Lfft, hidden], phi_rep: [B, Lfft, F_dim]
         z_rep = z.unsqueeze(1).expand(-1, Lfft, -1)
         phi_rep = phi.unsqueeze(0).expand(B, -1, -1)
 
         query_input = torch.cat([z_rep, phi_rep], dim=-1)
 
-        # 4. 生成复数权重 Λ⁻¹
         out = self.query_head(query_input)  # [B, Lfft, 2]
         w = torch.complex(out[..., 0], out[..., 1])
 
-        # 为了与主模型的 complex_conv1d 兼容，保持 [B, 1, Lfft] 形状
+        # Reshape to [B, 1, Lfft]
         return w.unsqueeze(1).to(torch.cfloat)

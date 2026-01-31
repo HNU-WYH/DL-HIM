@@ -32,9 +32,9 @@ TOL: Optional[float] = None                            # by default using the va
 # Pre-registered model checkpoints (use the keys inside CASES)
 # If Default is None, will raise an error
 MODEL_PATHS: Dict[str, Optional[str]] = {
-    # "Default": "./checkpoints/deeponet_diffusion1d/dynamic_residual_l2/diffusion_1D_Grid31_Ep20000_2026-01-26.pt",
-    "Default": "./checkpoints/deeponet_helmholtz1d/dynamic_residual_l2/helmholtz_1D_Grid31_Ep20000_2026-01-26.pt",
-    # "Default": "./checkpoints/fns_diffusion1d/dynamic_error_l2/diffusion_1D_Grid31_Ep10000_2025-12-19.pt",
+    # "Default": "./checkpoints/deeponet_diffusion1d/cons/dynamic_residual_l2/diffusion_1D_Grid31_Ep20000_2026-01-26.pt",
+    "Default": "./checkpoints/deeponet_helmholtz1d/cons/dynamic_residual_l2/helmholtz_1D_Grid31_Ep20000_2026-01-26.pt",
+    # "Default": "./checkpoints/fns_diffusion1d/nocons/dynamic_error_l2/diffusion_1D_Grid31_Ep10000_2025-12-19.pt",
 }
 
 # Evaluation plan: each dict describes one curve on the plot
@@ -198,9 +198,6 @@ def pad_series(values: List[float], target_len: int) -> np.ndarray:
     padded[: len(values)] = values
     return padded
 
-
-# TODO: 这里改为直接用cfg会不会更好? 每一次迭代都用override的cfg来工作
-# TODO: 这里我一会儿又要expand,一会儿又不要,这里也要改
 def collect_history(solver: HybridSolver,
                     u_ref_inner: np.ndarray,
                     max_iter: int, tol: float,

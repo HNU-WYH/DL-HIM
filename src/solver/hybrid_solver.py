@@ -134,13 +134,11 @@ class HybridSolver:
               aa_m: Optional[int] = None,
               mode: Optional[str] = None):
         """
-        统一求解入口
-
         Args:
-            u_init: 初始猜测 (inner points only, shape N-2)
-            max_iter: 最大迭代次数
-            tol: 收敛容差
-            aa_m: Anderson 历史步数
+            u_init: (inner points only, shape N-2)
+            max_iter:
+            tol:
+            aa_m: Anderson history size
             mode: "numerical", "deeponet", "hybrid"
 
         Returns:

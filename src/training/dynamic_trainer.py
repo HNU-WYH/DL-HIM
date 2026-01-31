@@ -132,10 +132,10 @@ class DynamicTrainer:
         total_steps = horizon * self.update_ratio
 
         for step in range(total_steps):
-            # TODO: this is a problem that might leading to mismatch
-            # If same as the inference: Jacobi first and then Neural Operator
-            # NO are trained on smoothed dataset, which lead to mismatch
-            # as the smoothing effects varies much between coarse grid (training) and fine grid (inference)
+            # neural operator first in training, as when applied in fine grid
+            # smoother has little impact on solutions
+            # training on initial residual will be more helpful
+
             if step % self.update_ratio == 0:
                 pred_dict = self.model(k_x=k_batch, f_x=r_batch, a_mats=A_batch)
                 delta_u = pred_dict["u_pred"]
@@ -226,9 +226,6 @@ class DynamicTrainer:
         return torch.mean(loss)
 
     def train_epoch(self):
-        # TODO: 把是否当场生成rhs data做成一个选项放在config里面
-        # 如果选择当场生成, 再使用不同的逻辑
-        # 我现在这个逻辑是针对于static dataset的
         self.model.train()
 
         epoch_loss = 0.0
@@ -261,7 +258,7 @@ class DynamicTrainer:
         return epoch_loss / data_size
 
     def val_epoch(self):
-        # 对于validation而言, 我们就不做dynamic 展开了, 直接看一下sole operator的表现
+        # For validation, we only check the performance of a sole operator
         self.model.eval()
         with torch.no_grad():
             pred_dict = self.model(k_x=self.k_val, f_x=self.f_val, a_mats=self.a_mats_val)
@@ -431,25 +428,22 @@ class DynamicTrainer:
 
     def reset_memory(self):
         """
-        显式清理显存, 防止在连续运行时造成显存泄露或统计错误
+        Clean Memory
         """
-        # 1. 删除大尺寸的数据张量
-        # 我们使用 getattr(self, ..., None) 来安全地获取属性，防止报错
-        # 然后显式删除引用
+        # 1. Delete data
         del self.k_train, self.f_train, self.u_train, self.du_train, self.a_mats_train
         del self.x_nodes, self.k_val, self.f_val, self.u_val, self.du_val, self.a_mats_val
 
-        # 2. 删除优化器 (优化器内部维护了动量等状态, 占用显存)
+        # 2. Delete Optimizer
         del self.optimizer
 
-        # 3. 删除模型引用 (如果模型是在外部定义的, 这里只是断开引用, 不会销毁外部模型)
-        # 但如果是为了彻底清空, 建议断开
+        # 3. Delete Model
         self.model = None
 
-        # 4. 强制执行垃圾回收
+        # 4. GC Clean
         gc.collect()
 
-        # 5. 清空 PyTorch 的显存缓存 (这是最关键的一步)
+        # 5. Clean PyTorch Cache
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
