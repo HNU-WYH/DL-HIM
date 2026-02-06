@@ -32,9 +32,9 @@ TOL: Optional[float] = None                            # by default using the va
 # Pre-registered model checkpoints (use the keys inside CASES)
 # If Default is None, will raise an error
 MODEL_PATHS: Dict[str, Optional[str]] = {
-    # "Default": "./checkpoints/deeponet_diffusion1d/cons/dynamic_residual_l2/diffusion_1D_Grid31_Ep20000_2026-01-26.pt",
-    "Default": "./checkpoints/deeponet_helmholtz1d/cons/dynamic_residual_l2/helmholtz_1D_Grid31_Ep20000_2026-01-26.pt",
-    # "Default": "./checkpoints/fns_diffusion1d/nocons/dynamic_error_l2/diffusion_1D_Grid31_Ep10000_2025-12-19.pt",
+    # "Default": "./checkpoints/deeponet_diffusion1d/dynamic_residual_l2/diffusion_1D_Grid31_Ep20000_2026-01-26.pt",
+    "Default": "./checkpoints/deeponet_helmholtz1d/dynamic_residual_l2/helmholtz_1D_Grid31_Ep20000_2026-01-26.pt",
+    # "Default": "./checkpoints/fns_diffusion1d/dynamic_error_l2/diffusion_1D_Grid31_Ep10000_2025-12-19.pt",
 }
 
 # Evaluation plan: each dict describes one curve on the plot
@@ -100,13 +100,9 @@ def select_test_sample(grid_num: Optional[int], dataset,
     x_before = dataset["x_data"]
     k_key = "k_data" if use_test_dataset else "k_data_val"
     f_key = "f_data" if use_test_dataset else "f_data_val"
-    # u_key = "u_data" if use_test_dataset else "u_data_val"
 
     k = dataset[k_key][test_sample_indices]
     f = dataset[f_key][test_sample_indices]
-    # u = dataset[u_key][test_sample_indices]
-    # a_mats = dataset["a_mats"][test_sample_indices]
-    # res = np.mean(f - (a_mats @ u[...,None]).squeeze(-1))
 
     if grid_num is None:
         x_after = x_before
@@ -116,12 +112,11 @@ def select_test_sample(grid_num: Optional[int], dataset,
     if grid_num and len(x_before) != len(x_after):
         k = [np.interp(x_after, x_before, k[i]) for i in range(k.shape[0])]
         f = [np.interp(x_after[1:-1], x_before[1:-1], f[i]) for i in range(f.shape[0])]
-        # u = [np.interp(x_after[1:-1], x_before[1:-1], u[i]) for i in range(u.shape[0])]
 
     if return_list:
-        return np.array(k), np.array(f), x_after # , np.array(u)
+        return np.array(k), np.array(f), x_after
     else:
-        return k[0], f[0], x_after, # u[0]
+        return k[0], f[0], x_after,
 
 
 def resolve_model_path(model_key: Optional[str], model_paths=MODEL_PATHS) -> Optional[str]:
@@ -177,12 +172,6 @@ def apply_case_overrides(base_cfg: Box, case: Dict,
     model_path = case.get("model_path") or resolve_model_path(case.get("model"))
     if model_path is not None:
         cfg["model_load_path"] = model_path
-        use_hard_cons = case.get("use_hard_cons")
-        if use_hard_cons is None:
-            use_hard_cons = infer_hard_constraints_from_path(model_path)
-        if use_hard_cons is not None:
-            cfg.training.don_setting.hard_cons = use_hard_cons
-            cfg.training.fns_setting.hard_cons = use_hard_cons
 
     return cfg
 
@@ -425,12 +414,6 @@ if __name__ == "__main__":
     plt.xlabel("Iteration")
     plt.ylabel("$\ell_2$ Norm of Error")
     plt.grid(True)
-    # plt.legend(
-    #     loc='upper center',  # 图例自己的对齐点（上边缘居中）
-    #     bbox_to_anchor=(0.5, -0.2),  # 图例相对于坐标轴的位置 (x=0.5居中, y=-0.15在轴下方)
-    #     ncol=3,  # 设置列数，建议设为3或5，让图例横向排列更美观
-    #     frameon=True  # 是否显示图例边框
-    # )
 
     plt.subplot(2, 1, 2)
     for label, vals in avg_results3.items():
@@ -442,10 +425,10 @@ if __name__ == "__main__":
     plt.ylabel("$\ell_2$ Norm of Residual")
     plt.grid(True)
     plt.legend(
-        loc='upper center',  # 图例自己的对齐点（上边缘居中）
-        bbox_to_anchor=(0.5, -0.20),  # 图例相对于坐标轴的位置 (x=0.5居中, y=-0.15在轴下方)
-        ncol=3,  # 设置列数，建议设为3或5，让图例横向排列更美观
-        frameon=True  # 是否显示图例边框
+        loc='upper center',
+        bbox_to_anchor=(0.5, -0.20),
+        ncol=3,
+        frameon=True
     )
 
     plt.tight_layout()

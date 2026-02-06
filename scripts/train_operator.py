@@ -132,7 +132,7 @@ def batch_train(trainer_types=("static", "dynamic", ),
                 ):
     """
     Checkpoints will be saved under:
-    ./checkpoints/{operator_type}_{problem_name}{dimension}{trainer_type}_{loss_type}_{loss_norm}/
+    ./checkpoints/{operator_type}_{problem_name}{dimension}/{trainer_type}_{loss_type}_{loss_norm}/
     """
 
     for trainer_type in trainer_types:

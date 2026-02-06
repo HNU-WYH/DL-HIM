@@ -14,7 +14,7 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 CONFIG_WILDCARD = "diffusion*"
 
 MODEL_TYPE = "DeepONet"
-MODEL_PATH = "checkpoints/deeponet_diffusion1d/cons/static_error_l2/diffusion_1D_Grid31_Ep20000_2026-01-25.pt"
+MODEL_PATH = "checkpoints/deeponet_diffusion1d/static_error_l2/diffusion_1D_Grid31_Ep20000_2026-01-25.pt"
 
 TEST_GRID_NUM = 801  #
 SAMPLE_INDEX = 8
