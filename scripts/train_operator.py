@@ -9,14 +9,13 @@ from src.neural_operator import create_no
 from src.training import StaticTrainer, DynamicTrainer
 from src.utils.cfg_util import load_config
 
-CONFIG_WILDCARD = "diffusion*"  # config filename wildcard
+CONFIG_WILDCARD = "diffusion*"    # config filename wildcard
 TRAINER_TYPE = "static"           # "static" or "dynamic"
 DATASET_PATH = None               # path to .npz dataset; None -> config default
 LOSS_NORM = None                  # "l1", "l2", or "h1"; None -> config default
 LOSS_TYPE = None                  # "error" or "residual"; None -> config default
 SAVE_AFTER_TRAIN = True           # whether save the trained neural operator model
-USE_CONS = False
-PRINT_INTERVAL = 1000              # Interval of printing; DeepONet recommend 1000, FNS recommend 100;
+PRINT_INTERVAL = 1000             # Interval of printing; DeepONet recommend 1000, FNS recommend 100;
 
 
 def apply_training_overrides(cfg: Box,
@@ -24,7 +23,6 @@ def apply_training_overrides(cfg: Box,
                              loss_norm=LOSS_NORM,
                              dataset_path=DATASET_PATH,
                              trainer_type=TRAINER_TYPE,
-                             use_cons=USE_CONS,
                              ):
     if trainer_type is not None:
         cfg.training.mode = trainer_type
@@ -37,10 +35,6 @@ def apply_training_overrides(cfg: Box,
 
     if loss_norm is not None:
         cfg.training.loss.norm = loss_norm
-
-    if use_cons is not None:
-        cfg.training.fns_setting.hard_cons = use_cons
-        cfg.training.don_setting.hard_cons = use_cons
 
     return cfg
 
@@ -64,15 +58,7 @@ def ckpt_dir(cfg: Box):
     problem_name, trainer_type = cfg.problem.type.lower(), cfg.training.mode.lower()
     loss_type, loss_norm = cfg.training.loss.type.lower(), cfg.training.loss.norm.lower()
 
-    if operator_type == "fns":
-        use_hard_cons = cfg.training.fns_setting.hard_cons
-    elif operator_type == "deeponet":
-        use_hard_cons = cfg.training.don_setting.hard_cons
-    else:
-        raise KeyError("Invalid Operator Type. Only DeepONet and FNS are supported")
-
-    cons_ckpt = "cons" if use_hard_cons else "nocons"
-    ckpt_base = f"./checkpoints/{operator_type}_{problem_name}{n_dim}d/{cons_ckpt}/{trainer_type}_{loss_type}_{loss_norm}"
+    ckpt_base = f"./checkpoints/{operator_type}_{problem_name}{n_dim}d/{trainer_type}_{loss_type}_{loss_norm}"
     return ckpt_base
 
 
@@ -81,13 +67,12 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
                    loss_norm=LOSS_NORM,
                    dataset_path=DATASET_PATH,
                    trainer_type=TRAINER_TYPE,
-                   use_cons=USE_CONS,
                    save_after_train=SAVE_AFTER_TRAIN,
                    print_interval=PRINT_INTERVAL,
                    ):
     """Train a DeepONet model according to the given configuration"""
     cfg = load_config(config_wildcard)
-    cfg = apply_training_overrides(cfg, loss_type, loss_norm, dataset_path, trainer_type, use_cons)
+    cfg = apply_training_overrides(cfg, loss_type, loss_norm, dataset_path, trainer_type)
 
     # define the save path
     ckpt_base = ckpt_dir(cfg)
@@ -138,40 +123,36 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
 
 
 def batch_train(trainer_types=("static", "dynamic", ),
-                loss_types=("residual",),
-                loss_norms=("l2",),
+                loss_types=("residual","error"),
+                loss_norms=("l2", "l1", "h1"),
                 config_wildcard=CONFIG_WILDCARD,
                 dataset_path=DATASET_PATH,
-                use_cons_lists=(True, ),
                 save_after_train=SAVE_AFTER_TRAIN,
                 print_interval=PRINT_INTERVAL,
                 ):
     """
     Checkpoints will be saved under:
-    ./checkpoints/{operator_type}_{problem_name}{dimension}/{cons_type}/{trainer_type}_{loss_type}_{loss_norm}/
+    ./checkpoints/{operator_type}_{problem_name}{dimension}{trainer_type}_{loss_type}_{loss_norm}/
     """
 
     for trainer_type in trainer_types:
         for loss_type in loss_types:
             for loss_norm in loss_norms:
-                for use_cons in use_cons_lists:
-                    print("=" * 80)
-                    print(
-                        f"Start training: trainer={trainer_type}, "
-                        f"loss_type={loss_type}, loss_norm={loss_norm}, "
-                        f"Constraint: {str(use_cons)}"
-                    )
-                    print("=" * 80)
+                print("=" * 80)
+                print(
+                    f"Start training: trainer={trainer_type}, "
+                    f"loss_type={loss_type}, loss_norm={loss_norm}. "
+                )
+                print("=" * 80)
 
-                    train_operator(config_wildcard=config_wildcard,
-                                   loss_type=loss_type,
-                                   loss_norm=loss_norm,
-                                   dataset_path=dataset_path,
-                                   trainer_type=trainer_type,
-                                   use_cons=use_cons,
-                                   save_after_train=save_after_train,
-                                   print_interval=print_interval,
-                    )
+                train_operator(config_wildcard=config_wildcard,
+                               loss_type=loss_type,
+                               loss_norm=loss_norm,
+                               dataset_path=dataset_path,
+                               trainer_type=trainer_type,
+                               save_after_train=save_after_train,
+                               print_interval=print_interval,
+                )
 
 
 if __name__ == "__main__":
