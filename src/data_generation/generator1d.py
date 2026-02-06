@@ -216,7 +216,7 @@ class TestDataGenerator(DataGenerator1d):
 
     def __generate_k_base(self):
         """
-        生成一组基础的k(x), 后续拿来复用
+        Generate a base set of k(x) samples for reuse.
         """
         gen_cfg = self.testing_cfg.k_x
         gen_name = getattr(gen_cfg, "generator").lower()

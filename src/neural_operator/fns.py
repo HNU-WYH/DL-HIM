@@ -25,7 +25,7 @@ class FNS1d(NeuralOperatorBase):
             lfreq = fns_config.get("fno_lfreq", 4)
             self.meta_lambda = FNOMetaLambda1D(act=act, hidden=hidden, modes=modes, Lfreq=lfreq)
         else:
-            # 默认为 UNet1D
+            # Default to UNet1D based on their implement on Diffusion equations
             self.meta_lambda = UNet1D(act=act, hidden=hidden)
 
         # Grid Properties

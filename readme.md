@@ -26,5 +26,5 @@ The project is organized as follows:
 If this work helps your research into making AI-based PDE solvers more reliable, please cite:
 
 ```
-TBD
+Citation details will be updated after publication.
 ```

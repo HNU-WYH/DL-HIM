@@ -56,7 +56,7 @@ def run_analysis():
 
     print(f"Running Hybrid cycles (Cycle = 1 Neural + {cycle_ratio - 1} Jacobi)...")
     for _ in tqdm(range(MAX_ITER_CYCLES), desc="Hybrid Cycles"):
-        # A. 记录当前残差与误差 (物理层面)
+        # Record the current residual and error
         res = np.linalg.norm(solver.compute_residual(u_hybrid), ord=2)
         # err = np.linalg.norm(u_ref - u_hybrid, ord=2)
         hybrid_res.append(res)
