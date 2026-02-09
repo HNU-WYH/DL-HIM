@@ -1,6 +1,6 @@
 ## 🚩Introduction
 
-This repository provides the official implementation of the research paper: **"Are Deep Learning Based Hybrid PDE Solvers Reliable? Why Training Paradigms and Update Strategies Matter"**.
+This repository provides the official implementation of the research paper: [**"Are Deep Learning Based Hybrid PDE Solvers Reliable? Why Training Paradigms and Update Strategies Matter"**]{https://arxiv.org/abs/2602.06842}.
 
 ------
 
