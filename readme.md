@@ -26,5 +26,13 @@ The project is organized as follows:
 If this work helps your research into making AI-based PDE solvers more reliable, please cite:
 
 ```
-Citation details will be updated after publication.
+@misc{wu2026deeplearningbasedhybrid,
+      title={Are Deep Learning Based Hybrid PDE Solvers Reliable? Why Training Paradigms and Update Strategies Matter}, 
+      author={Yuhan Wu and Jan Willem van Beek and Victorita Dolean and Alexander Heinlein},
+      year={2026},
+      eprint={2602.06842},
+      archivePrefix={arXiv},
+      primaryClass={math.NA},
+      url={https://arxiv.org/abs/2602.06842}, 
+}
 ```
