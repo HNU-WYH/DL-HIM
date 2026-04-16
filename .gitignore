@@ -3,3 +3,6 @@
 /.idea
 src/training/temp.py
 *.png
+/suggestion.md
+/%ckpt备份/
+/%temp/
