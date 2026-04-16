@@ -216,7 +216,7 @@ class TestDataGenerator(DataGenerator1d):
 
     def __generate_k_base(self):
         """
-        生成一组基础的k(x), 后续拿来复用
+        Generate a base set of k(x) samples for reuse.
         """
         gen_cfg = self.testing_cfg.k_x
         gen_name = getattr(gen_cfg, "generator").lower()
@@ -264,31 +264,8 @@ class TestDataGenerator(DataGenerator1d):
                     a_list.append(A_inner)                                          # [N-2, N-2]
                     cond_list.append(np.linalg.cond(A_inner))
 
-            elif rtype == "au":
-                for idx in tqdm(range(self.redundant_func_num), desc=f"Solve {rtype}"):
-                    k_curr = k_base[idx]
-
-                    # Obtaining the matrix based on k(x)
-                    solver_inst = self.u_generator(self.x_nodes, k_curr, np.zeros_like(self.x_nodes), eps=self.eps)
-                    A_inner, _, _, _ = solver_inst.build_system(u_left=0.0, u_right=0.0, method=self.solver)
-
-                    # Obtaining u(x)~N(0, I) and f(x) = Au(x)
-                    u_inner = np.random.normal(0, 1, size=self.grid_num - 2)
-                    f_inner = A_inner @ u_inner
-
-                    # Obtaining du(x)
-                    if hasattr(A_inner, "toarray"): A_inner = A_inner.toarray()
-                    du_inner = np.gradient(expand_solution(u_inner, 0.0, 0.0), self.x_nodes)[1:-1]
-
-                    # Gathering data
-                    u_list.append(u_inner)
-                    du_list.append(du_inner)
-                    f_list.append(f_inner)
-                    k_list.append(k_curr)
-                    a_list.append(A_inner)
-                    cond_list.append(np.linalg.cond(A_inner))
             else:
-                raise ValueError(f"Unsupported rhs type: {rtype}, only gaussian, fixed, grf, au are supported")
+                raise ValueError(f"Unsupported rhs type: {rtype}, only gaussian, fixed, grf are supported")
 
             all_k.append(np.stack(k_list))
             all_u.append(np.stack(u_list))

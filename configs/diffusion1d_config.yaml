@@ -69,9 +69,9 @@ testing:
     fixed_setting:
       value: 1.0
   f_x:
-    generator: [grf, fixed, gaussian, ]  # rhs generation types to mix for testing
+    generator: [grf, fixed, gaussian,]     # rhs generation types to mix for testing
     gaussian_setting:                      # gaussian: f ~ N(0,1)
-      standard: True                       # au: f = Au where u ~ N(0,1)
+      standard: True
     fixed_setting:                         # fixed: f = 1
       value: 1.0
     grf_setting:                           # grf: gaussian random field
@@ -84,7 +84,7 @@ testing:
 # ============================
 training:
   mode: static                      # "static" or "dynamic"
-  operator_type: FNS           # Neural Operator Type ("DeepONet", "MIONet", "FNS")
+  operator_type: DeepONet           # Neural Operator Type ("DeepONet", "MIONet", "FNS")
   batch_size: 1024                  # batch size
   num_epoch: 20000                 # Epoch num
   lr: 0.0001                        # learning rate

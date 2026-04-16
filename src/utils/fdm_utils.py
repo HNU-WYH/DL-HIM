@@ -178,7 +178,7 @@ def solve_dirichlet_system_1d(A, f, u_left=0.0, u_right=0.0, mat_type="sparse"):
 
 def direct_solve(A, b, mat_type="sparse"):
     """
-    单纯的线性方程组求解器: Ax = b
+    Directly solve Ax = b
     Args:
         A: (N, N) matrix
         b: (N,) vector

@@ -1,5 +1,6 @@
 import os
 import copy
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -32,8 +33,9 @@ TOL: Optional[float] = None                            # by default using the va
 # Pre-registered model checkpoints (use the keys inside CASES)
 # If Default is None, will raise an error
 MODEL_PATHS: Dict[str, Optional[str]] = {
+    "Default": "./checkpoints/deeponet_helmholtz1d/static_residual_l2/helmholtz_1D_Grid31_Ep20000_2026-01-26.pt"
     # "Default": "./checkpoints/deeponet_diffusion1d/dynamic_residual_l2/diffusion_1D_Grid31_Ep20000_2026-01-26.pt",
-    "Default": "./checkpoints/deeponet_helmholtz1d/dynamic_residual_l2/helmholtz_1D_Grid31_Ep20000_2026-01-26.pt",
+    # "Default": "./checkpoints/deeponet_helmholtz1d/dynamic_residual_l2/helmholtz_1D_Grid31_Ep20000_2026-01-26.pt",
     # "Default": "./checkpoints/fns_diffusion1d/dynamic_error_l2/diffusion_1D_Grid31_Ep10000_2025-12-19.pt",
 }
 
@@ -41,24 +43,36 @@ MODEL_PATHS: Dict[str, Optional[str]] = {
 CASES: List[Dict] = [
     # {"label": "Pure-DeepONet", "mode": "neural",    "model": "Default", "one_shot": True},
 
-    # {"label": "Gauss-Seidel", "mode": "numerical", "model": None, "numerical_method": "gauss-seidel"},
-
     {"label": "Jacobi", "mode": "numerical", "model": None, "numerical_method": "jacobi"},
 
-    {"label": "Jacobi-AA", "mode": "numerical", "model": None, "numerical_method": "jacobi",
-     "numerical_update": "aa", "aa_m": 10},
+    # {"label": "Jacobi-AA", "mode": "numerical", "model": None, "numerical_method": "jacobi",
+    #  "numerical_update": "aa", "aa_m": 10},
 
-    {"label": "HINTS-Fixed", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
+    {"label": "HINTS-Fixed (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
     "hybrid_ratio": 20, "neural_update": "fixed"},
 
-    {"label": "HINTS-AA", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
+    {"label": "HINTS-AA (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
      "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 10},
 
-    {"label": "HINTS-PAAA", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
+    {"label": "HINTS-PAAA (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
      "hybrid_ratio": 20, "neural_update": "am", "aa_m": 10},
 
-    {"label": "HINTS-Adaptive", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
+    {"label": "HINTS-LineSearch (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
     "hybrid_ratio": 20, "neural_update": "cg"},
+
+    {"label": "Gauss-Seidel", "mode": "numerical", "model": None, "numerical_method": "gauss-seidel"},
+
+    {"label": "HINTS-Fixed (GS)", "mode": "hybrid", "model": "Default", "numerical_method": "gauss-seidel",
+     "hybrid_ratio": 20, "neural_update": "fixed"},
+
+    {"label": "HINTS-AA (GS)", "mode": "hybrid", "model": "Default", "numerical_method": "gauss-seidel",
+     "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 10},
+
+    {"label": "HINTS-PAAA (GS)", "mode": "hybrid", "model": "Default", "numerical_method": "gauss-seidel",
+     "hybrid_ratio": 20, "neural_update": "am", "aa_m": 10},
+
+    {"label": "HINTS-LineSearch (GS)", "mode": "hybrid", "model": "Default", "numerical_method": "gauss-seidel",
+     "hybrid_ratio": 20, "neural_update": "cg"},
 ]
 
 
@@ -100,13 +114,9 @@ def select_test_sample(grid_num: Optional[int], dataset,
     x_before = dataset["x_data"]
     k_key = "k_data" if use_test_dataset else "k_data_val"
     f_key = "f_data" if use_test_dataset else "f_data_val"
-    # u_key = "u_data" if use_test_dataset else "u_data_val"
 
     k = dataset[k_key][test_sample_indices]
     f = dataset[f_key][test_sample_indices]
-    # u = dataset[u_key][test_sample_indices]
-    # a_mats = dataset["a_mats"][test_sample_indices]
-    # res = np.mean(f - (a_mats @ u[...,None]).squeeze(-1))
 
     if grid_num is None:
         x_after = x_before
@@ -116,12 +126,11 @@ def select_test_sample(grid_num: Optional[int], dataset,
     if grid_num and len(x_before) != len(x_after):
         k = [np.interp(x_after, x_before, k[i]) for i in range(k.shape[0])]
         f = [np.interp(x_after[1:-1], x_before[1:-1], f[i]) for i in range(f.shape[0])]
-        # u = [np.interp(x_after[1:-1], x_before[1:-1], u[i]) for i in range(u.shape[0])]
 
     if return_list:
-        return np.array(k), np.array(f), x_after # , np.array(u)
+        return np.array(k), np.array(f), x_after
     else:
-        return k[0], f[0], x_after, # u[0]
+        return k[0], f[0], x_after,
 
 
 def resolve_model_path(model_key: Optional[str], model_paths=MODEL_PATHS) -> Optional[str]:
@@ -177,12 +186,6 @@ def apply_case_overrides(base_cfg: Box, case: Dict,
     model_path = case.get("model_path") or resolve_model_path(case.get("model"))
     if model_path is not None:
         cfg["model_load_path"] = model_path
-        use_hard_cons = case.get("use_hard_cons")
-        if use_hard_cons is None:
-            use_hard_cons = infer_hard_constraints_from_path(model_path)
-        if use_hard_cons is not None:
-            cfg.training.don_setting.hard_cons = use_hard_cons
-            cfg.training.fns_setting.hard_cons = use_hard_cons
 
     return cfg
 
@@ -198,9 +201,6 @@ def pad_series(values: List[float], target_len: int) -> np.ndarray:
     padded[: len(values)] = values
     return padded
 
-
-# TODO: 这里改为直接用cfg会不会更好? 每一次迭代都用override的cfg来工作
-# TODO: 这里我一会儿又要expand,一会儿又不要,这里也要改
 def collect_history(solver: HybridSolver,
                     u_ref_inner: np.ndarray,
                     max_iter: int, tol: float,
@@ -413,11 +413,25 @@ def run_evaluation(plot_indices: Optional[Sequence[int]] = None,
 
 
 if __name__ == "__main__":
-    avg_results3 = run_evaluation(plot_indices=PLOT_SAMPLE_INDICES)
-    #
-    #
-    #
-    #
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=str, default=None,
+                        help="Config filename wildcard, e.g. 'diffusion*' or 'helmholtz*'. "
+                             f"Defaults to the hardcoded CONFIG_WILDCARD ('{CONFIG_WILDCARD}').")
+    parser.add_argument("--grid", type=int, default=None,
+                        help=f"Override TEST_GRID_NUM. Defaults to {TEST_GRID_NUM}.")
+    parser.add_argument("--output", type=str, default=None,
+                        help="Output file path for the figure, e.g. 'results/gs_diffusion.pdf'. "
+                             "Supports any matplotlib format (.pdf, .png, .svg). "
+                             "If not provided, the figure is shown interactively and not saved.")
+    args = parser.parse_args()
+
+    config_wildcard = args.config or CONFIG_WILDCARD
+    test_grid_num = args.grid or TEST_GRID_NUM
+
+    avg_results3 = run_evaluation(plot_indices=PLOT_SAMPLE_INDICES,
+                                  config_wildcard=config_wildcard,
+                                  test_grid_num=test_grid_num)
+
     plt.figure(figsize=(6, 7))
     plt.subplot(2, 1, 1)
     for label, vals in avg_results3.items():
@@ -428,12 +442,6 @@ if __name__ == "__main__":
     plt.xlabel("Iteration")
     plt.ylabel("$\ell_2$ Norm of Error")
     plt.grid(True)
-    # plt.legend(
-    #     loc='upper center',  # 图例自己的对齐点（上边缘居中）
-    #     bbox_to_anchor=(0.5, -0.2),  # 图例相对于坐标轴的位置 (x=0.5居中, y=-0.15在轴下方)
-    #     ncol=3,  # 设置列数，建议设为3或5，让图例横向排列更美观
-    #     frameon=True  # 是否显示图例边框
-    # )
 
     plt.subplot(2, 1, 2)
     for label, vals in avg_results3.items():
@@ -445,11 +453,17 @@ if __name__ == "__main__":
     plt.ylabel("$\ell_2$ Norm of Residual")
     plt.grid(True)
     plt.legend(
-        loc='upper center',  # 图例自己的对齐点（上边缘居中）
-        bbox_to_anchor=(0.5, -0.20),  # 图例相对于坐标轴的位置 (x=0.5居中, y=-0.15在轴下方)
-        ncol=3,  # 设置列数，建议设为3或5，让图例横向排列更美观
-        frameon=True  # 是否显示图例边框
+        loc='upper center',
+        bbox_to_anchor=(0.5, -0.20),
+        ncol=3,
+        frameon=True
     )
 
     plt.tight_layout()
-    plt.show()
+
+    if args.output:
+        os.makedirs(os.path.dirname(args.output), exist_ok=True) if os.path.dirname(args.output) else None
+        plt.savefig(args.output, dpi=300, bbox_inches="tight")
+        print(f"Figure saved to: {args.output}")
+    else:
+        plt.show()

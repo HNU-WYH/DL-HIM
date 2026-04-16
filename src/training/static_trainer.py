@@ -134,7 +134,7 @@ class StaticTrainer:
             du_batch = self.du_train[batch_idx] if self.need_du_true else None
             a_mats_batch = self.a_mats_train[batch_idx] if self.need_A else None
 
-            # 前向传播
+            # Forward
             pred_dict = self.model(k_x=k_batch, f_x=f_batch, a_mats=a_mats_batch,
                                    compute_du=self.compute_autograd)
             u_pred = pred_dict["u_pred"]
@@ -150,7 +150,7 @@ class StaticTrainer:
                                      du_pred=du_pred, du_true=du_batch,
                                      res=res, dres=dres)
 
-            # 反向传播并优化
+            # Backprop
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
@@ -331,19 +331,16 @@ class StaticTrainer:
 
     def reset_memory(self):
         """
-        显式清理显存
+        Clean Memory
         """
-        # 1. 删除数据张量
+
         del self.k_train, self.f_train, self.u_train, self.du_train, self.a_mats_train
         del self.x_nodes, self.k_val, self.f_val, self.u_val, self.du_val, self.a_mats_val
 
-        # 2. 删除优化器
         del self.optimizer
 
-        # 3. 断开模型引用
         self.model = None
 
-        # 4. 强制 GC 和 清空 CUDA 缓存
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()

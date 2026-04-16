@@ -99,7 +99,7 @@ class AndersonAcceleration:
 
 class AndersonMixing:
     """
-    Pure Type-II Anderson / mixing on physical residual r = b - A x.
+    Anderson mixing on physical residual r = b - A x.
 
     Input each step:
       - g_k: proposal point (e.g., output of hybrid solver)
@@ -108,10 +108,6 @@ class AndersonMixing:
     Output:
       - u_next = u_AA (no damping, no line search)
       - r_next = r(u_AA) computed WITHOUT direct matvec: r_next = r_k - ΔR γ
-
-    Notes:
-      - Works as "no extra matvec" only for linear residual r(u)=b-Au.
-      - You may still want restart criteria later; currently kept minimal.
     """
     def __init__(self, m=5, reg=1e-13):
         self.m = m
@@ -251,7 +247,6 @@ def adaptive_step_size_cg(a_mat: np.ndarray, p_k: np.ndarray, r_k: np.ndarray, e
             return vec[None, ...], True
 
         # Case 3: [B, N] -> Batched -> [B, N, 1]
-        # 判断依据：维度是2，但最后一维是 N (不是1)
         if vec.ndim == 2:
             return vec[..., None], False
 
@@ -273,7 +268,7 @@ def adaptive_step_size_cg(a_mat: np.ndarray, p_k: np.ndarray, r_k: np.ndarray, e
     # compute Alpha
     alpha_k = numer / (denom + eps)             # [B, 1, 1]
 
-    # 4. 还原输出形状
+    # 4. Return the initial shape
     if is_single:
         return alpha_k.item()                   # return scalar
     else:

@@ -13,11 +13,11 @@ from scripts.evaluate_single_solver import evaluate_case_on_sample, load_evaluat
 
 
 # In[]:
-# CONFIG_WILDCARD = "diffusion1d*"
-CONFIG_WILDCARD = "helmholtz1d*"
-# CHECKPOINT_ROOT = "checkpoints/fns_diffusion1d/nocons"
-# CHECKPOINT_ROOT = "checkpoints/deeponet_diffusion1d/cons"
-CHECKPOINT_ROOT = "checkpoints/deeponet_helmholtz1d/cons"
+CONFIG_WILDCARD = "diffusion1d*"
+# CONFIG_WILDCARD = "helmholtz1d*"
+# CHECKPOINT_ROOT = "checkpoints/fns_diffusion1d"
+CHECKPOINT_ROOT = "checkpoints/deeponet_diffusion1d"
+# CHECKPOINT_ROOT = "checkpoints/deeponet_helmholtz1d"
 
 TEST_GRID_NUM: Optional[int] = 201                    # if not equal, interpolate to uniformly spaced TEST_GRID_NUM
 TEST_DATASET_PATH: Optional[str] = None                # path to .npz test dataset; None -> derive from the dataset path
@@ -170,9 +170,9 @@ if __name__ == "__main__":
     plt.ylabel(r"$\ell_2$ Norm of Residual")
     plt.grid(True)
     plt.legend(
-        loc='upper center',  # 图例自己的对齐点（上边缘居中）
-        bbox_to_anchor=(0.5, -0.20),  # 图例相对于坐标轴的位置 (x=0.5居中, y=-0.15在轴下方)
-        ncol=3,  # 设置列数，建议设为3或5，让图例横向排列更美观
+        loc='upper center',
+        bbox_to_anchor=(0.5, -0.20),
+        ncol=3,
         frameon=True
     )
 
