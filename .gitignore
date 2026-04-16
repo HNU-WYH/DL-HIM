@@ -1,5 +1,5 @@
-/%others
 *.pyc
-/.idea
-src/training/temp.py
 *.png
+/.idea
+/.review
+/suggestion.md
