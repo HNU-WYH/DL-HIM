@@ -19,10 +19,10 @@ CONFIG_WILDCARD = "diffusion1d*"
 CHECKPOINT_ROOT = "checkpoints/deeponet_diffusion1d"
 # CHECKPOINT_ROOT = "checkpoints/deeponet_helmholtz1d"
 
-TEST_GRID_NUM: Optional[int] = 201                    # if not equal, interpolate to uniformly spaced TEST_GRID_NUM
+TEST_GRID_NUM: Optional[int] = 801                    # if not equal, interpolate to uniformly spaced TEST_GRID_NUM
 TEST_DATASET_PATH: Optional[str] = None                # path to .npz test dataset; None -> derive from the dataset path
 
-SAMPLE_INDICES: Optional[Iterable[int]] = None
+SAMPLE_INDICES: Optional[Iterable[int]] = np.arange(10)
 PLOT_SAMPLE_INDICES: Optional[Iterable[int]] = None
 
 # In[]:

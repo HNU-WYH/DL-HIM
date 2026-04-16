@@ -3,6 +3,7 @@ import copy
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 
 from box import Box
 from tqdm import tqdm
@@ -21,19 +22,19 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 # CONFIG_WILDCARD = "diffusion*"                       # config filename wildcard
 CONFIG_WILDCARD = "helmholtz*"                       # config filename wildcard
 
-TEST_GRID_NUM: Optional[int] = 201                    # use dataset grid by default
+TEST_GRID_NUM: Optional[int] = 601                    # use dataset grid by default
 TEST_DATASET_PATH: Optional[str] = None                # default: cfg["dataset_path"] + "_test.npz"
 
 SAMPLE_INDICES: Optional[Sequence[int]] = None                  # validation indices to evaluate
 PLOT_SAMPLE_INDICES: Optional[Sequence[int]] = None  # indices in the testing data to visualize
 
-MAX_ITER: Optional[int] = 700                         # Iteration / tolerance applied to every case
+MAX_ITER: Optional[int] = 2000                         # Iteration / tolerance applied to every case
 TOL: Optional[float] = None                            # by default using the value in the yaml file
 
 # Pre-registered model checkpoints (use the keys inside CASES)
 # If Default is None, will raise an error
 MODEL_PATHS: Dict[str, Optional[str]] = {
-    "Default": "./checkpoints/deeponet_helmholtz1d/static_residual_l2/helmholtz_1D_Grid31_Ep20000_2026-01-26.pt"
+    "Default": "./checkpoints/deeponet_helmholtz1d/static_residual_l2/helmholtz_1D_Grid31_Ep20000_2026-01-26.pt",
     # "Default": "./checkpoints/deeponet_diffusion1d/dynamic_residual_l2/diffusion_1D_Grid31_Ep20000_2026-01-26.pt",
     # "Default": "./checkpoints/deeponet_helmholtz1d/dynamic_residual_l2/helmholtz_1D_Grid31_Ep20000_2026-01-26.pt",
     # "Default": "./checkpoints/fns_diffusion1d/dynamic_error_l2/diffusion_1D_Grid31_Ep10000_2025-12-19.pt",
@@ -43,7 +44,7 @@ MODEL_PATHS: Dict[str, Optional[str]] = {
 CASES: List[Dict] = [
     # {"label": "Pure-DeepONet", "mode": "neural",    "model": "Default", "one_shot": True},
 
-    {"label": "Jacobi", "mode": "numerical", "model": None, "numerical_method": "jacobi"},
+    # {"label": "Jacobi", "mode": "numerical", "model": None, "numerical_method": "jacobi"},
 
     # {"label": "Jacobi-AA", "mode": "numerical", "model": None, "numerical_method": "jacobi",
     #  "numerical_update": "aa", "aa_m": 10},
@@ -57,10 +58,10 @@ CASES: List[Dict] = [
     {"label": "HINTS-PAAA (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
      "hybrid_ratio": 20, "neural_update": "am", "aa_m": 10},
 
-    {"label": "HINTS-LineSearch (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
+    {"label": "HINTS-ELS (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
     "hybrid_ratio": 20, "neural_update": "cg"},
 
-    {"label": "Gauss-Seidel", "mode": "numerical", "model": None, "numerical_method": "gauss-seidel"},
+    # {"label": "Gauss-Seidel", "mode": "numerical", "model": None, "numerical_method": "gauss-seidel"},
 
     {"label": "HINTS-Fixed (GS)", "mode": "hybrid", "model": "Default", "numerical_method": "gauss-seidel",
      "hybrid_ratio": 20, "neural_update": "fixed"},
@@ -71,7 +72,7 @@ CASES: List[Dict] = [
     {"label": "HINTS-PAAA (GS)", "mode": "hybrid", "model": "Default", "numerical_method": "gauss-seidel",
      "hybrid_ratio": 20, "neural_update": "am", "aa_m": 10},
 
-    {"label": "HINTS-LineSearch (GS)", "mode": "hybrid", "model": "Default", "numerical_method": "gauss-seidel",
+    {"label": "HINTS-ELS (GS)", "mode": "hybrid", "model": "Default", "numerical_method": "gauss-seidel",
      "hybrid_ratio": 20, "neural_update": "cg"},
 ]
 
@@ -432,38 +433,122 @@ if __name__ == "__main__":
                                   config_wildcard=config_wildcard,
                                   test_grid_num=test_grid_num)
 
-    plt.figure(figsize=(6, 7))
-    plt.subplot(2, 1, 1)
-    for label, vals in avg_results3.items():
-        if label == "HINTS-CG":
-            label = "HINTS-Adaptive"
-        plt.semilogy(vals["iter"], vals["error"], label=label)
-    plt.title("Average Error Norm vs Iteration")
-    plt.xlabel("Iteration")
-    plt.ylabel("$\ell_2$ Norm of Error")
-    plt.grid(True)
+    # 1. 定义统一的视觉映射字典
+    METHOD_COLORS = {
+        "Fixed": "#1f77b4",  # 蓝色
+        "ELS": "#ff7f0e",    # 橙色
+        "AA": "#2ca02c",     # 绿色
+        "PAAA": "#d62728"    # 红色
+    }
 
-    plt.subplot(2, 1, 2)
+    SOLVER_STYLES = {
+        "Jacobi": "-",       # 实线
+        "GS": "--"           # 虚线
+    }
+
+    # 辅助函数：严格区分 PAAA 和 AA
+    def get_method_name(label):
+        if "PAAA" in label:
+            return "PAAA"
+        elif "AA" in label:
+            return "AA"
+        elif "ELS" in label:
+            return "ELS"
+        return "Fixed"
+
+
+    # 稍微调小一点整体高度，让画面更紧凑
+    fig = plt.figure(figsize=(7, 7))
+
+    # ====== 绘制第一个子图 (Error) ======
+    ax1 = plt.subplot(2, 1, 1)
     for label, vals in avg_results3.items():
-        if label == "HINTS-CG":
-            label = "HINTS-Adaptive"
-        plt.semilogy(vals["iter"], vals["residual"], label=label)
-    plt.title("Average Residual Norm vs Iteration")
-    plt.xlabel("Iteration")
-    plt.ylabel("$\ell_2$ Norm of Residual")
-    plt.grid(True)
-    plt.legend(
-        loc='upper center',
-        bbox_to_anchor=(0.5, -0.20),
-        ncol=3,
+        current_method = get_method_name(label)  # 使用安全匹配函数
+        current_solver = "GS" if "GS" in label else "Jacobi"
+
+        ax1.semilogy(
+            vals["iter"], vals["error"],
+            color=METHOD_COLORS[current_method],
+            linestyle=SOLVER_STYLES[current_solver],
+            linewidth=1.5
+        )
+    ax1.set_title("Average Error Norm vs Iteration")
+    # ax1.set_xlabel("Iteration")  <-- 已注销：去除了上图的横坐标文字，避免与标题重复
+    ax1.set_ylabel(r"$\ell_2$ Norm of Error")
+    ax1.set_ylim(top=1e2)
+    ax1.grid(True)
+
+    # ====== 绘制第二个子图 (Residual) ======
+    ax2 = plt.subplot(2, 1, 2)
+    for label, vals in avg_results3.items():
+        current_method = get_method_name(label)
+        current_solver = "GS" if "GS" in label else "Jacobi"
+
+        ax2.semilogy(
+            vals["iter"], vals["residual"],
+            color=METHOD_COLORS[current_method],
+            linestyle=SOLVER_STYLES[current_solver],
+            linewidth=1.5
+        )
+    ax2.set_title("Average Residual Norm vs Iteration")
+    ax2.set_xlabel("Iteration")
+    ax2.set_ylabel(r"$\ell_2$ Norm of Residual")
+    ax2.set_ylim(top=1e2)
+    ax2.grid(True)
+
+    # ====== 2. 手动构建并添加解耦后的图例 ======
+
+    legend_elements_methods = [
+        Line2D([0], [0], color=color, lw=2, label=f"HINTS-{method}")
+        for method, color in METHOD_COLORS.items()
+    ]
+
+    legend_elements_solvers = [
+        Line2D([0], [0], color='gray', linestyle=style, lw=2, label=solver)
+        for solver, style in SOLVER_STYLES.items()
+    ]
+
+    # 紧凑布局
+    plt.tight_layout()
+
+    # 调整图表底部的留白（从原本的 0.25 缩减到 0.18）
+    plt.subplots_adjust(bottom=0.18)
+
+    # 将图例向上抬（bbox_to_anchor 的 y 坐标从 0.02 调高到 0.06）
+    fig.legend(
+        handles=legend_elements_methods,
+        title="Methods (Colors)",
+        loc='lower center',
+        bbox_to_anchor=(0.35, 0.005),
+        ncol=2,
         frameon=True
     )
 
-    plt.tight_layout()
+    fig.legend(
+        handles=legend_elements_solvers,
+        title="Solvers (Line Styles)",
+        loc='lower center',
+        bbox_to_anchor=(0.78, 0.005),
+        ncol=1,
+        frameon=True
+    )
 
+    # ====== 3. 保存或显示 ======
     if args.output:
-        os.makedirs(os.path.dirname(args.output), exist_ok=True) if os.path.dirname(args.output) else None
+        if os.path.dirname(args.output):
+            os.makedirs(os.path.dirname(args.output), exist_ok=True)
         plt.savefig(args.output, dpi=300, bbox_inches="tight")
         print(f"Figure saved to: {args.output}")
+
+        # Save raw data for reproduction
+        data_dict = {}
+        for label, vals in avg_results3.items():
+            safe_label = label.replace(" ", "_").replace("(", "").replace(")", "")
+            data_dict[f"{safe_label}__iter"] = vals["iter"]
+            data_dict[f"{safe_label}__error"] = vals["error"]
+            data_dict[f"{safe_label}__residual"] = vals["residual"]
+        data_path = os.path.splitext(args.output)[0] + "_data.npz"
+        np.savez(data_path, **data_dict)
+        print(f"Raw data saved to: {data_path}")
     else:
         plt.show()
