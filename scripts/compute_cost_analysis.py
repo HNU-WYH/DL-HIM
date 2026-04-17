@@ -15,6 +15,8 @@ import os
 import time
 import copy
 import numpy as np
+import scipy.sparse as sp
+import scipy.sparse.linalg as spla
 import matplotlib.pyplot as plt
 from box import Box
 from tqdm import tqdm
@@ -31,10 +33,10 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 # Configuration
 # =============================================================================
 CONFIG_WILDCARD = "diffusion*"
-TEST_GRID_NUM: Optional[int] = None  # None → use config default (201). 801 is too fine for 1000 Jacobi iters.
+TEST_GRID_NUM: Optional[int] = 801
 TEST_DATASET_PATH: Optional[str] = None
 SAMPLE_INDICES: Optional[Sequence[int]] = [0]
-MAX_ITER: Optional[int] = None  # None → let each case use its own max_iter or cfg default
+MAX_ITER: Optional[int] = 1000
 TOL: Optional[float] = None
 
 MODEL_PATHS: Dict[str, Optional[str]] = {
@@ -43,35 +45,22 @@ MODEL_PATHS: Dict[str, Optional[str]] = {
     # "Default": "checkpoints/deeponet_helmholtz1d/dynamic_residual_l2/helmholtz_1D_Grid31_Ep20000_2026-01-26.pt",
 }
 
-BASELINE: str = "Jacobi"                                             # label of the speedup reference case
+BASELINE: str = "HINTS-Fixed (Jacobi)"                                             # label of the speedup reference case
 OUTPUT_PATH: Optional[str] = "results/diffusion_cost.pdf"            # e.g. "results/diffusion_cost.pdf"; None → show
 SAVE_TABLE_PATH: Optional[str] = "results/diffusion_speedup.md"      # e.g. "results/diffusion_speedup.md"; None → skip
 
 CASES: List[Dict] = [
-    {"label": "Jacobi", "mode": "numerical", "model": None, "numerical_method": "jacobi", "max_iter": 200000},
-
-    {"label": "Gauss-Seidel", "mode": "numerical", "model": None, "numerical_method": "gauss-seidel", "max_iter": 100000},
-
     {"label": "HINTS-Fixed (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
      "relaxation_factor": 0.66, "hybrid_ratio": 20, "neural_update": "fixed"},
-    #
-    # {"label": "HINTS-AA (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
-    #  "relaxation_factor": 0.66, "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 10},
+
+    {"label": "HINTS-AA (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
+     "relaxation_factor": 0.66, "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 10},
 
     {"label": "HINTS-PAAA (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
      "relaxation_factor": 0.66, "hybrid_ratio": 20, "neural_update": "am", "aa_m": 10},
 
-    # {"label": "HINTS-ELS (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
-    #  "relaxation_factor": 0.66, "hybrid_ratio": 20, "neural_update": "cg"},
-
-    {"label": "HINTS-Fixed (GS)", "mode": "hybrid", "model": "Default", "numerical_method": "gauss-seidel",
-     "relaxation_factor": 1.0, "hybrid_ratio": 20, "neural_update": "fixed"},
-
-    # {"label": "HINTS-AA (GS)", "mode": "hybrid", "model": "Default", "numerical_method": "gauss-seidel",
-    # "relaxation_factor": 1.0, "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 10},
-
-    {"label": "HINTS-PAAA (GS)", "mode": "hybrid", "model": "Default", "numerical_method": "gauss-seidel",
-     "relaxation_factor": 1.0, "hybrid_ratio": 20, "neural_update": "am", "aa_m": 10},
+    {"label": "HINTS-ELS (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
+     "relaxation_factor": 0.66, "hybrid_ratio": 20, "neural_update": "cg"},
 
     # {"label": "HINTS-ELS (GS)", "mode": "hybrid", "model": "Default", "numerical_method": "gauss-seidel",
     #  "relaxation_factor": 1.0, "hybrid_ratio": 20, "neural_update": "cg"},
@@ -272,7 +261,10 @@ def evaluate_case_on_sample(base_cfg: Box, case: Dict,
         prob_x_nodes=x_nodes,
         cp_path=cfg.get("model_load_path"),
     )
-    u_gt_inner = np.linalg.solve(solver.A_inner, solver.f_inner)
+    if sp.issparse(solver.A_inner):
+        u_gt_inner = spla.spsolve(solver.A_inner, solver.f_inner)
+    else:
+        u_gt_inner = np.linalg.solve(solver.A_inner, solver.f_inner)
     res_hist, err_hist, time_hist, u_curr = collect_history(
         solver, u_gt_inner,
         mode=case.get("mode", "hybrid"),

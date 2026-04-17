@@ -6,6 +6,8 @@ import os
 import time
 import copy
 import numpy as np
+import scipy.sparse as sp
+import scipy.sparse.linalg as spla
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from box import Box
@@ -273,7 +275,10 @@ def evaluate_case_on_sample(base_cfg: Box, case: Dict,
         prob_x_nodes=x_nodes,
         cp_path=cfg.get("model_load_path"),
     )
-    u_gt_inner = np.linalg.solve(solver.A_inner, solver.f_inner)
+    if sp.issparse(solver.A_inner):
+        u_gt_inner = spla.spsolve(solver.A_inner, solver.f_inner)
+    else:
+        u_gt_inner = np.linalg.solve(solver.A_inner, solver.f_inner)
     res_hist, err_hist, time_hist, u_curr = collect_history(
         solver, u_gt_inner,
         mode=case.get("mode", "hybrid"),

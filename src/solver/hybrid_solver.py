@@ -77,14 +77,11 @@ class HybridSolver:
             u_left=0.0, u_right=0.0, method=self.config.problem.method
         )
 
-        if sp.issparse(self.A_inner):
-            self.A_inner = self.A_inner.toarray()
-
         if self.smoother_type == "jacobi":
             self.M = self.A_inner.diagonal()
 
         elif self.smoother_type in ["gauss-seidel", "gauss_seidel", "gs", "g-s"]:
-            self.M = np.tril(self.A_inner)
+            self.M = sp.tril(self.A_inner, format='csr')
 
         else:
             raise ValueError(f"{self.smoother_type.title()} smoother is not supported.")
@@ -122,7 +119,8 @@ class HybridSolver:
                                      query_points=self.prob_x_nodes[self.inner_slice])
 
         if self.neural_update_type == "cg":
-            alpha = adaptive_step_size_cg(self.A_inner, delta_u, residual)
+            a_mat = self.A_inner.toarray() if sp.issparse(self.A_inner) else self.A_inner
+            alpha = adaptive_step_size_cg(a_mat, delta_u, residual)
         else:
             alpha = 1.0
 
