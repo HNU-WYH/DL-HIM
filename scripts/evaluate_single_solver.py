@@ -26,15 +26,14 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 CONFIG_WILDCARD = "diffusion*"
 TEST_GRID_NUM: Optional[int] = 1201
 TEST_DATASET_PATH: Optional[str] = None
-SAMPLE_INDICES: Optional[Sequence[int]] = None
+SAMPLE_INDICES: Optional[Sequence[int]] = [1,2]
 PLOT_SAMPLE_INDICES: Optional[Sequence[int]] = None
 MAX_ITER: Optional[int] = 1000
 TOL: Optional[float] = None
-
 OUTPUT_PATH: Optional[str] = None                        # e.g. "results/diffusion_iter.pdf"; None → show
 
 MODEL_PATHS: Dict[str, Optional[str]] = {
-    "Default": "./checkpoints/fns_diffusion1d/dynamic_error_l2/diffusion_1D_Grid31_Ep101_2026-04-17.pt",
+    "Default": "./checkpoints/fns_diffusion1d_fno/dynamic_error_l2/diffusion_1D_Grid31_Ep101_2026-04-17.pt",
     # "Default": "./checkpoints/deeponet_diffusion1d/dynamic_residual_l2/diffusion_1D_Grid31_Ep20000_2026-01-26.pt",
     # "Default": "checkpoints/deeponet_helmholtz1d/dynamic_residual_l2/helmholtz_1D_Grid31_Ep20000_2026-01-26.pt",
 }
