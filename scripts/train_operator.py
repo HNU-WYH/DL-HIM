@@ -122,8 +122,8 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
     # ==============================================================
 
 
-def batch_train(trainer_types=("static", "dynamic", ),
-                loss_types=("residual","error"),
+def batch_train(trainer_types=("static",),        #, "dynamic", ),
+                loss_types=("residual", "error"),
                 loss_norms=("l2", "l1", "h1"),
                 config_wildcard=CONFIG_WILDCARD,
                 dataset_path=DATASET_PATH,
@@ -145,14 +145,18 @@ def batch_train(trainer_types=("static", "dynamic", ),
                 )
                 print("=" * 80)
 
-                train_operator(config_wildcard=config_wildcard,
-                               loss_type=loss_type,
-                               loss_norm=loss_norm,
-                               dataset_path=dataset_path,
-                               trainer_type=trainer_type,
-                               save_after_train=save_after_train,
-                               print_interval=print_interval,
-                )
+                try:
+                    train_operator(config_wildcard=config_wildcard,
+                                   loss_type=loss_type,
+                                   loss_norm=loss_norm,
+                                   dataset_path=dataset_path,
+                                   trainer_type=trainer_type,
+                                   save_after_train=save_after_train,
+                                   print_interval=print_interval,
+                    )
+                except Exception as e:
+                    print(f"FAILED: trainer={trainer_type}, loss_type={loss_type}, loss_norm={loss_norm} -> {e}")
+                    continue
 
 
 if __name__ == "__main__":

@@ -1,11 +1,11 @@
 import os
-from typing import Dict, Iterable, List, Tuple, Union
+import argparse
+from typing import Dict, Iterable, List, Tuple, Union, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
 
 from tqdm import tqdm
-from typing import Optional
 
 from src.utils.cfg_util import load_config
 from src.utils.visualization import plot_case_predictions
@@ -15,14 +15,14 @@ from scripts.evaluate_single_solver import evaluate_case_on_sample, load_evaluat
 # In[]:
 CONFIG_WILDCARD = "diffusion1d*"
 # CONFIG_WILDCARD = "helmholtz1d*"
-# CHECKPOINT_ROOT = "checkpoints/fns_diffusion1d"
-CHECKPOINT_ROOT = "checkpoints/deeponet_diffusion1d"
+CHECKPOINT_ROOT = "checkpoints/fns_diffusion1d/"
+# CHECKPOINT_ROOT = "checkpoints/deeponet_diffusion1d"
 # CHECKPOINT_ROOT = "checkpoints/deeponet_helmholtz1d"
 
-TEST_GRID_NUM: Optional[int] = 801                    # if not equal, interpolate to uniformly spaced TEST_GRID_NUM
+TEST_GRID_NUM: Optional[int] = 201                    # if not equal, interpolate to uniformly spaced TEST_GRID_NUM
 TEST_DATASET_PATH: Optional[str] = None                # path to .npz test dataset; None -> derive from the dataset path
 
-SAMPLE_INDICES: Optional[Iterable[int]] = np.arange(10)
+SAMPLE_INDICES: Optional[Iterable[int]] = None
 PLOT_SAMPLE_INDICES: Optional[Iterable[int]] = None
 
 # In[]:
@@ -62,6 +62,7 @@ def average_histories(histories: Iterable[np.ndarray]) -> np.ndarray:
 def compare_checkpoints(
         plot_indices: Union[int, Optional[Iterable[int]]] = PLOT_SAMPLE_INDICES,
         sample_indices: Union[int, Optional[Iterable[int]]] = SAMPLE_INDICES,
+        output_path: Optional[str] = None,
 ):
     # load config and data
     cfg = load_config(CONFIG_WILDCARD)
@@ -96,7 +97,7 @@ def compare_checkpoints(
 
     for case in tqdm(checkpoint_cases, desc="Checkpoints"):
         for dataset_idx, (k_sample, f_sample) in enumerate(zip(k_samples, f_samples)):
-            err_hist, res_hist, u_curr, u_true = evaluate_case_on_sample(cfg, case, k_sample, f_sample, x_nodes)
+            err_hist, res_hist, time_hist, u_curr, u_true = evaluate_case_on_sample(cfg, case, k_sample, f_sample, x_nodes)
 
             case_results[case["label"]]["errors"].append(err_hist)
             case_results[case["label"]]["residuals"].append(res_hist)
@@ -123,6 +124,7 @@ def compare_checkpoints(
     plt.title("Error vs Iteration (dataset average)")
     plt.xlabel("Iteration")
     plt.ylabel("L2 Error Norm")
+    plt.ylim(top=1e2)
     plt.grid(True)
     plt.legend()
 
@@ -132,11 +134,19 @@ def compare_checkpoints(
     plt.title("Residual vs Iteration (dataset average)")
     plt.xlabel("Iteration")
     plt.ylabel("L-2 Residual Norm")
+    plt.ylim(top=1e2)
     plt.grid(True)
     plt.legend()
 
     plt.tight_layout()
-    plt.show()
+    if output_path:
+        path1 = os.path.splitext(output_path)[0] + "_overview.png"
+        if os.path.dirname(path1):
+            os.makedirs(os.path.dirname(path1), exist_ok=True)
+        plt.savefig(path1, dpi=300, bbox_inches="tight")
+        print(f"Overview figure saved to: {path1}")
+    else:
+        plt.show()
 
     if plot_predictions:
         plot_case_predictions(plot_predictions)
@@ -145,7 +155,14 @@ def compare_checkpoints(
 
 
 if __name__ == "__main__":
-    avg_results3 = compare_checkpoints(plot_indices=PLOT_SAMPLE_INDICES)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", type=str, default=None,
+                        help="Output file path for the figure, e.g. 'results/comparison.pdf'. "
+                             "Supports any matplotlib format (.pdf, .png, .svg). "
+                             "If not provided, the figure is shown interactively and not saved.")
+    args = parser.parse_args()
+
+    avg_results3 = compare_checkpoints(plot_indices=PLOT_SAMPLE_INDICES, output_path=args.output)
 
     plt.figure(figsize=(6, 7))
     plt.subplot(2, 1, 1)
@@ -156,6 +173,7 @@ if __name__ == "__main__":
     plt.title("Error vs Iteration (dataset average)")
     plt.xlabel("Iteration")
     plt.ylabel("L2 Error Norm")
+    plt.ylim(top=1e2)
     plt.grid(True)
     # plt.legend()
 
@@ -168,6 +186,7 @@ if __name__ == "__main__":
     plt.title("Average Residual Norm vs Iteration")
     plt.xlabel("Iteration")
     plt.ylabel(r"$\ell_2$ Norm of Residual")
+    plt.ylim(top=1e2)
     plt.grid(True)
     plt.legend(
         loc='upper center',
@@ -177,4 +196,22 @@ if __name__ == "__main__":
     )
 
     plt.tight_layout()
-    plt.show()
+
+    if args.output:
+        if os.path.dirname(args.output):
+            os.makedirs(os.path.dirname(args.output), exist_ok=True)
+        plt.savefig(args.output, dpi=300, bbox_inches="tight")
+        print(f"Figure saved to: {args.output}")
+
+        # Save raw data for reproduction
+        data_dict = {}
+        for label, vals in avg_results3.items():
+            safe_label = label.replace(" ", "_").replace("(", "").replace(")", "")
+            data_dict[f"{safe_label}__iter"] = vals["iter"]
+            data_dict[f"{safe_label}__error"] = vals["error"]
+            data_dict[f"{safe_label}__residual"] = vals["residual"]
+        data_path = os.path.splitext(args.output)[0] + "_data.npz"
+        np.savez(data_path, **data_dict)
+        print(f"Raw data saved to: {data_path}")
+    else:
+        plt.show()

@@ -84,9 +84,9 @@ testing:
 # ============================
 training:
   mode: static                      # "static" or "dynamic"
-  operator_type: DeepONet           # Neural Operator Type ("DeepONet", "MIONet", "FNS")
+  operator_type: FNS                # Neural Operator Type ("DeepONet", "MIONet", "FNS")
   batch_size: 1024                  # batch size
-  num_epoch: 20000                 # Epoch num
+  num_epoch: 101                   # Epoch num
   lr: 0.0001                        # learning rate
   weight_decay: !!float 1e-8        # weight decay
 
@@ -106,14 +106,14 @@ training:
   fns_setting:
     act: "gelu"
     hidden: 32
-    meta_lambda: unet                # "fno" or "unet"
+    meta_lambda: fno                # "fno" or "unet"
     hard_cons: False                # whether to apply the hard constraints in the neural network
 
   dynamic:                          # dynamic training settings (not used in static)
-    horizon_size: 5                 # the num of future step in dynamic training framework
+    horizon_size: 10                # the num of future step in dynamic training framework
     curriculum:                     # curriculum learning
       enabled: true                 # true/True or false/False
-      update_interval: 2000         # horizon++ for each update interval
+      update_interval: 10         # horizon++ for each update interval
 
 
 # ==========================================================

@@ -1,0 +1,20 @@
+================================================================================
+Start training: trainer=dynamic, loss_type=residual, loss_norm=l2.
+================================================================================
+Epoch [0/1001], Train Loss:  1.0193e+00, Val Loss:  3.2234e-03, Horizon: 1
+Epoch [1000/1001], Train Loss:  2.9597e-02, Val Loss:  2.8898e-05, Horizon: 10
+==================================================
+ (Dynamic) Time and Memory Usage Report
+ Horizon Setting       : K=10
+ Total Wall-clock Time : 224.0601 sec
+ Avg Time per Epoch    : 0.2238 sec
+ Peak GPU Memory       : 95.70 MB
+==================================================
+Finished training.
+Final train loss: 2.9597e-02
+Final val loss:   2.8898e-05
+Model successfully saved to ./checkpoints/deeponet_diffusion1d/dynamic_residual_l2\diffusion_1D_Grid31_Ep1001_2026-04-17.pt
+Model and Loss saved to ./checkpoints/deeponet_diffusion1d/dynamic_residual_l2
+Cleaning up memory for trainer type: dynamic...
+Dynamic Trainer Memory reset complete.
+Memory cleanup finished.

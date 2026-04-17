@@ -1,4 +1,5 @@
 import os
+import time
 import copy
 import argparse
 import numpy as np
@@ -19,25 +20,24 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
 # In[]:
 # Pre-registered config for unresolved problem and testing data
-# CONFIG_WILDCARD = "diffusion*"                       # config filename wildcard
-CONFIG_WILDCARD = "helmholtz*"                       # config filename wildcard
+CONFIG_WILDCARD = "diffusion*"                       # config filename wildcard
+# CONFIG_WILDCARD = "helmholtz*"                       # config filename wildcard
 
-TEST_GRID_NUM: Optional[int] = 601                    # use dataset grid by default
+TEST_GRID_NUM: Optional[int] = 1201                    # use dataset grid by default
 TEST_DATASET_PATH: Optional[str] = None                # default: cfg["dataset_path"] + "_test.npz"
 
-SAMPLE_INDICES: Optional[Sequence[int]] = None                  # validation indices to evaluate
+SAMPLE_INDICES: Optional[Sequence[int]] = None       # validation indices to evaluate
 PLOT_SAMPLE_INDICES: Optional[Sequence[int]] = None  # indices in the testing data to visualize
 
-MAX_ITER: Optional[int] = 2000                         # Iteration / tolerance applied to every case
+MAX_ITER: Optional[int] = 1000                        # Iteration / tolerance applied to every case
 TOL: Optional[float] = None                            # by default using the value in the yaml file
 
 # Pre-registered model checkpoints (use the keys inside CASES)
 # If Default is None, will raise an error
 MODEL_PATHS: Dict[str, Optional[str]] = {
-    "Default": "./checkpoints/deeponet_helmholtz1d/static_residual_l2/helmholtz_1D_Grid31_Ep20000_2026-01-26.pt",
-    # "Default": "./checkpoints/deeponet_diffusion1d/dynamic_residual_l2/diffusion_1D_Grid31_Ep20000_2026-01-26.pt",
-    # "Default": "./checkpoints/deeponet_helmholtz1d/dynamic_residual_l2/helmholtz_1D_Grid31_Ep20000_2026-01-26.pt",
-    # "Default": "./checkpoints/fns_diffusion1d/dynamic_error_l2/diffusion_1D_Grid31_Ep10000_2025-12-19.pt",
+    # "Default": "./checkpoints/deeponet_helmholtz1d/static_residual_l2/helmholtz_1D_Grid31_Ep20000_2026-01-26.pt",,
+    "Default": "./checkpoints/fns_diffusion1d/dynamic_error_l2/diffusion_1D_Grid31_Ep101_2026-04-17.pt",
+
 }
 
 # Evaluation plan: each dict describes one curve on the plot
@@ -50,30 +50,30 @@ CASES: List[Dict] = [
     #  "numerical_update": "aa", "aa_m": 10},
 
     {"label": "HINTS-Fixed (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
-    "hybrid_ratio": 20, "neural_update": "fixed"},
+     "relaxation_factor": 0.66, "hybrid_ratio": 20, "neural_update": "fixed"},
 
     {"label": "HINTS-AA (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
-     "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 10},
+     "relaxation_factor": 0.66, "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 10},
 
     {"label": "HINTS-PAAA (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
-     "hybrid_ratio": 20, "neural_update": "am", "aa_m": 10},
+     "relaxation_factor": 0.66, "hybrid_ratio": 20, "neural_update": "am", "aa_m": 10},
 
     {"label": "HINTS-ELS (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
-    "hybrid_ratio": 20, "neural_update": "cg"},
+     "relaxation_factor": 0.66, "hybrid_ratio": 20, "neural_update": "cg"},
 
     # {"label": "Gauss-Seidel", "mode": "numerical", "model": None, "numerical_method": "gauss-seidel"},
 
     {"label": "HINTS-Fixed (GS)", "mode": "hybrid", "model": "Default", "numerical_method": "gauss-seidel",
-     "hybrid_ratio": 20, "neural_update": "fixed"},
+     "relaxation_factor": 1.0, "hybrid_ratio": 20, "neural_update": "fixed"},
 
     {"label": "HINTS-AA (GS)", "mode": "hybrid", "model": "Default", "numerical_method": "gauss-seidel",
-     "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 10},
+     "relaxation_factor": 1.0, "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 10},
 
     {"label": "HINTS-PAAA (GS)", "mode": "hybrid", "model": "Default", "numerical_method": "gauss-seidel",
-     "hybrid_ratio": 20, "neural_update": "am", "aa_m": 10},
+     "relaxation_factor": 1.0, "hybrid_ratio": 20, "neural_update": "am", "aa_m": 10},
 
     {"label": "HINTS-ELS (GS)", "mode": "hybrid", "model": "Default", "numerical_method": "gauss-seidel",
-     "hybrid_ratio": 20, "neural_update": "cg"},
+     "relaxation_factor": 1.0, "hybrid_ratio": 20, "neural_update": "cg"},
 ]
 
 
@@ -172,6 +172,10 @@ def apply_case_overrides(base_cfg: Box, case: Dict,
     if numerical_method is not None:
         cfg.solver.numerical["method"] = numerical_method
 
+    relaxation_factor = case.get("relaxation_factor")
+    if relaxation_factor is not None:
+        cfg.solver.numerical["relaxation_factor"] = relaxation_factor
+
     hybrid_ratio = case.get("hybrid_ratio")
     if hybrid_ratio is not None:
         cfg.solver.hybrid["update_ratio"] = hybrid_ratio
@@ -208,20 +212,27 @@ def collect_history(solver: HybridSolver,
                     mode: str, one_shot: bool = False,
                     aa_m: Optional[int] = None,
                     use_cache_residual: bool = True,
-                    ) -> Tuple[np.ndarray, np.ndarray]:
+                    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Run a single case and collect (residual, error) histories.
+    Run a single case and collect (residual, error, time) histories.
     """
     mode = mode.lower()
     # u_ref_inner = solver.u_inner
     u_curr = np.zeros_like(u_ref_inner, dtype=np.float64)
 
     if one_shot:
+        t0 = time.perf_counter()
         u_pred = solver._neural_step(u_curr)
         residual = solver.compute_residual(u_pred)
         res_norm = float(np.linalg.norm(residual, ord=2))
         err_norm = float(np.linalg.norm(u_pred - u_ref_inner, ord=2))
-        return np.full(max_iter, res_norm, dtype=np.float64), np.full(max_iter, err_norm, dtype=np.float64), u_pred
+        elapsed = time.perf_counter() - t0
+        return (
+            np.full(max_iter, res_norm, dtype=np.float64),
+            np.full(max_iter, err_norm, dtype=np.float64),
+            np.full(max_iter, elapsed, dtype=np.float64),
+            u_pred,
+        )
 
     # Initialize Anderson Acceleration if requested
     if solver.neural_update_type == "aa":
@@ -238,10 +249,12 @@ def collect_history(solver: HybridSolver,
     # --------------------------
     errors: List[float] = []
     residuals: List[float] = []
+    times: List[float] = []
 
     # Use cached residual to avoid computing the residual redundantly inside steps
     r_curr = solver.compute_residual(u_curr) if use_cache_residual else None
 
+    t0 = time.perf_counter()
     for iter_idx in range(max_iter):
         numerical_update = (iter_idx + 1) % solver.hybrid_ratio
 
@@ -283,6 +296,7 @@ def collect_history(solver: HybridSolver,
 
         residuals.append(res_norm)
         errors.append(err_norm)
+        times.append(time.perf_counter() - t0)
 
         u_curr = u_next
         r_curr = r_next
@@ -290,13 +304,13 @@ def collect_history(solver: HybridSolver,
         if res_norm < tol:
             break
 
-    return pad_series(residuals, max_iter), pad_series(errors, max_iter), u_curr
+    return pad_series(residuals, max_iter), pad_series(errors, max_iter), pad_series(times, max_iter), u_curr
 
 
 def evaluate_case_on_sample(base_cfg: Box, case: Dict,
                             k_x: np.ndarray, f_inner: np.ndarray, x_nodes: np.ndarray,
                             max_iter: int = MAX_ITER, tol: float = TOL
-                            ) -> Tuple[np.ndarray, np.ndarray]:
+                            ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
 
     cfg = apply_case_overrides(base_cfg, case)
     max_iter = max_iter or case.get("max_iter") or cfg.problem.get("iteration", 200)
@@ -313,13 +327,13 @@ def evaluate_case_on_sample(base_cfg: Box, case: Dict,
 
     u_gt_inner = np.linalg.solve(solver.A_inner, solver.f_inner)
 
-    res_hist, err_hist, u_curr = collect_history(solver, u_gt_inner,
-                                                 mode=case.get("mode", "hybrid"),
-                                                 max_iter=max_iter, tol=tol,
-                                                 one_shot=case.get("one_shot", False),
-                                                 aa_m=case.get("aa_m"),
-                                                 )
-    return err_hist, res_hist, u_curr, u_gt_inner
+    res_hist, err_hist, time_hist, u_curr = collect_history(solver, u_gt_inner,
+                                                            mode=case.get("mode", "hybrid"),
+                                                            max_iter=max_iter, tol=tol,
+                                                            one_shot=case.get("one_shot", False),
+                                                            aa_m=case.get("aa_m"),
+                                                            )
+    return err_hist, res_hist, time_hist, u_curr, u_gt_inner
 
 
 def average_histories(histories: Iterable[np.ndarray]) -> np.ndarray:
@@ -355,8 +369,8 @@ def run_evaluation(plot_indices: Optional[Sequence[int]] = None,
                                              test_sample_indices=sample_indices,
                                              use_test_dataset=use_test_dataset)
 
-    # Initialize the result for loss, error and iters
-    case_results = {case["label"]: {"errors": [], "residuals": [], "iters": None} for case in cases}
+    # Initialize the result for loss, error, residual, time and iters
+    case_results = {case["label"]: {"errors": [], "residuals": [], "times": [], "iters": None} for case in cases}
 
     # Initialize the prediction for plotting the results of selected indices under difference cases
     plot_predictions = {idx: {} for idx in plot_indices}
@@ -364,7 +378,7 @@ def run_evaluation(plot_indices: Optional[Sequence[int]] = None,
     # Evaluate every sample in the sampled indices
     for sample_idx, _ in enumerate(tqdm(sample_indices, desc="Samples")):
         for case in cases:
-            err_hist, res_hist, u_curr, u_true = evaluate_case_on_sample(cfg, case,
+            err_hist, res_hist, time_hist, u_curr, u_true = evaluate_case_on_sample(cfg, case,
                                                                  k_val[sample_idx],
                                                                  f_val[sample_idx],
                                                                  x_val,
@@ -372,6 +386,7 @@ def run_evaluation(plot_indices: Optional[Sequence[int]] = None,
 
             case_results[case["label"]]["errors"].append(err_hist)
             case_results[case["label"]]["residuals"].append(res_hist)
+            case_results[case["label"]]["times"].append(time_hist)
             case_results[case["label"]]["iters"] = np.arange(1, len(err_hist) + 1)
 
             if sample_idx in plot_predictions:
@@ -382,7 +397,8 @@ def run_evaluation(plot_indices: Optional[Sequence[int]] = None,
     for label, store in case_results.items():
         avg_err = average_histories(store["errors"])
         avg_res = average_histories(store["residuals"])
-        avg_results[label] = {"iter": store["iters"], "error": avg_err, "residual": avg_res}
+        avg_time = average_histories(store["times"])
+        avg_results[label] = {"iter": store["iters"], "error": avg_err, "residual": avg_res, "time": avg_time}
 
     # Plotting
     plt.figure(figsize=(12, 5))
@@ -547,6 +563,7 @@ if __name__ == "__main__":
             data_dict[f"{safe_label}__iter"] = vals["iter"]
             data_dict[f"{safe_label}__error"] = vals["error"]
             data_dict[f"{safe_label}__residual"] = vals["residual"]
+            data_dict[f"{safe_label}__time"] = vals["time"]
         data_path = os.path.splitext(args.output)[0] + "_data.npz"
         np.savez(data_path, **data_dict)
         print(f"Raw data saved to: {data_path}")
