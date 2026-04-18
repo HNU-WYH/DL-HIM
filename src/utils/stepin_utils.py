@@ -1,3 +1,4 @@
+import torch
 import numpy as np
 
 
@@ -97,7 +98,7 @@ class AndersonAcceleration:
         return True
 
 
-class AndersonMixing:
+class PAAA:
     """
     Anderson mixing on physical residual r = b - A x.
 
@@ -273,3 +274,84 @@ def adaptive_step_size_cg(a_mat: np.ndarray, p_k: np.ndarray, r_k: np.ndarray, e
         return alpha_k.item()                   # return scalar
     else:
         return alpha_k.squeeze()                # return array [B,]
+
+
+class AndersonAccelerationGPU:
+    """
+    GPU-native Anderson acceleration.  Mirrors AndersonAcceleration exactly but
+    keeps all history tensors on-device and uses torch.linalg.solve instead of
+    numpy — no CPU round-trips during the iteration loop.
+
+    Usage is identical to AndersonAcceleration:
+        aa = AndersonAccelerationGPU(m=10, device='cuda')
+        p_k = aa.compute(u_k, G_u_k)   # u_{k+1} = u_k + p_k
+    """
+
+    def __init__(self, m: int = 5, reg: float = 1e-13, device: str = "cuda"):
+        self.m = m
+        self.reg = reg
+        self.device = torch.device(device)
+
+        self.hist_u: list[torch.Tensor] = []
+        self.hist_f: list[torch.Tensor] = []
+        self.hist_diff_u: list[torch.Tensor] = []
+        self.hist_diff_f: list[torch.Tensor] = []
+
+    def compute(self, u_k: torch.Tensor, G_u_k: torch.Tensor) -> torch.Tensor:
+        """
+        u_k, G_u_k: tensors on self.device, shape (F,) or (B, F) or (B, H, W, ...).
+        Returns p_k with the same shape as u_k.
+        """
+        ori_size = u_k.shape
+        f_k_raw = G_u_k - u_k
+
+        if u_k.dim() == 1:
+            u_k = u_k.unsqueeze(0)
+            f_k = f_k_raw.unsqueeze(0)
+        else:
+            B = u_k.shape[0]
+            u_k = u_k.reshape(B, -1)
+            f_k = f_k_raw.reshape(B, -1)
+
+        if len(self.hist_u) == 0:
+            self.hist_u.append(u_k)
+            self.hist_f.append(f_k)
+            return f_k_raw
+
+        delta_u = u_k - self.hist_u[-1]
+        delta_f = f_k - self.hist_f[-1]
+
+        self.hist_u.append(u_k)
+        self.hist_f.append(f_k)
+        self.hist_diff_u.append(delta_u)
+        self.hist_diff_f.append(delta_f)
+
+        current_m = len(self.hist_diff_f)
+        if current_m > self.m:
+            self.hist_u.pop(0)
+            self.hist_f.pop(0)
+            self.hist_diff_u.pop(0)
+            self.hist_diff_f.pop(0)
+            current_m -= 1
+
+        Mat_F = torch.stack(self.hist_diff_f, dim=-1)          # [B, F, m]
+        Mat_U = torch.stack(self.hist_diff_u, dim=-1)          # [B, F, m]
+        Mat_F_T = Mat_F.transpose(1, 2)                        # [B, m, F]
+
+        eye = torch.eye(current_m, dtype=u_k.dtype, device=self.device)
+        H = Mat_F_T @ Mat_F + self.reg * eye                   # [B, m, m]
+        rhs = Mat_F_T @ f_k.unsqueeze(-1)                      # [B, m, 1]
+
+        gamma = torch.linalg.solve(H, rhs)                     # [B, m, 1]
+        temp = (Mat_U + Mat_F) @ gamma                         # [B, F, 1]
+        p_k = f_k - temp.squeeze(-1)                           # [B, F]
+        return p_k.reshape(ori_size)
+
+    def reset(self):
+        self.hist_u.clear()
+        self.hist_f.clear()
+        self.hist_diff_u.clear()
+        self.hist_diff_f.clear()
+
+    def __bool__(self):
+        return True

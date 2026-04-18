@@ -120,18 +120,19 @@ training:
 # 4. Configs of the hybrid solver
 # ==========================================================
 solver:
-  type: Hybrid                              # "Hybrid", "Numerical", "Neural"
+  type: Hybrid                                 # "Hybrid", "Numerical", "Neural"
+  gpu_pipeline: TRUE                           # true: full GPU closed-loop; false: GPU-CPU Hybrid
   numerical:
     method: jacobi                             # the numerical solver, "jacobi" or "GS"
     relaxation_factor:  0.6                    # the relaxation coefficient for the classical smoother
-    numerical_update: fixed                    # fixed | aa | am
+    numerical_update: fixed                    # fixed | aa | paaa
     AA:
       m: 10
       reg: 1e-16
 
   hybrid:
     update_ratio: 20                           # Ratio of classical to neural updates
-    neural_update: fixed                       # "fixed" (size = 1), "cg" (size = p.Tr/p.TAp), "aa" (anderson acc.)
+    neural_update: fixed                       # "fixed" (size = 1), "cg" (size = p.Tr/p.TAp), "aa" (anderson acc.), "paaa" (PAAA)
     AA:
       m: 10                                     # the size of aa's history (If use aa to update)
       reg: 1e-10                               # the regularization term

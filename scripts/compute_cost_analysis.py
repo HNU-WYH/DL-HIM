@@ -25,7 +25,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 from src.utils.cfg_util import load_config
 from src.utils.fdm_utils import expand_solution
 from src.solver.hybrid_solver import HybridSolver
-from src.utils.stepin_utils import AndersonAcceleration, AndersonMixing
+from src.utils.stepin_utils import AndersonAcceleration, PAAA
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
@@ -53,17 +53,14 @@ CASES: List[Dict] = [
     {"label": "HINTS-Fixed (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
      "relaxation_factor": 0.66, "hybrid_ratio": 20, "neural_update": "fixed"},
 
-    {"label": "HINTS-AA (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
-     "relaxation_factor": 0.66, "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 10},
-
     {"label": "HINTS-PAAA (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
-     "relaxation_factor": 0.66, "hybrid_ratio": 20, "neural_update": "am", "aa_m": 10},
+     "relaxation_factor": 0.66, "hybrid_ratio": 20, "neural_update": "paaa", "aa_m": 10},
 
-    {"label": "HINTS-ELS (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
-     "relaxation_factor": 0.66, "hybrid_ratio": 20, "neural_update": "cg"},
+    {"label": "HINTS-Fixed (GS)", "mode": "hybrid", "model": "Default", "numerical_method": "GS",
+     "relaxation_factor": 1.0, "hybrid_ratio": 20, "neural_update": "fixed"},
 
-    # {"label": "HINTS-ELS (GS)", "mode": "hybrid", "model": "Default", "numerical_method": "gauss-seidel",
-    #  "relaxation_factor": 1.0, "hybrid_ratio": 20, "neural_update": "cg"},
+    {"label": "HINTS-PAAA (GS)", "mode": "hybrid", "model": "Default", "numerical_method": "GS",
+     "relaxation_factor": 1.0, "hybrid_ratio": 20, "neural_update": "paaa", "aa_m": 10},
 ]
 
 # =============================================================================
@@ -189,9 +186,9 @@ def collect_history(solver: HybridSolver, u_ref_inner: np.ndarray,
     if solver.neural_update_type == "aa":
         history_size = aa_m or solver.config.solver.hybrid.get("aa_m", 10)
         aa = AndersonAcceleration(m=history_size, reg=1e-20)
-    elif solver.neural_update_type == "am":
+    elif solver.neural_update_type == "paaa":
         history_size = aa_m or solver.config.solver.hybrid.get("aa_m", 10)
-        aa = AndersonMixing(m=history_size, reg=1e-20)
+        aa = PAAA(m=history_size, reg=1e-20)
     else:
         aa = None
 
@@ -220,7 +217,7 @@ def collect_history(solver: HybridSolver, u_ref_inner: np.ndarray,
         else:
             raise ValueError(f"Unknown mode: {mode}")
 
-        if apply_anderson and solver.neural_update_type == "am":
+        if apply_anderson and solver.neural_update_type == "paaa":
             r_gk = solver.compute_residual(g_k)
             u_next, r_next, _ = aa.compute(g_k, r_gk)
         elif apply_anderson and solver.neural_update_type == "aa":

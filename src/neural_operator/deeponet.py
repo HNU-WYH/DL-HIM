@@ -199,6 +199,29 @@ class DeepONet1d(NeuralOperatorBase):
 
         return u.cpu().detach().numpy()  # (B, G-2)
 
+    def predict_tensor(self, k_x: torch.Tensor, f_x: torch.Tensor,
+                       query_points: torch.Tensor) -> torch.Tensor:
+        """
+        GPU-native inference: all tensors must already be on self.device.
+
+          k_x:          (B, don_num_x_nodes)    float32
+          f_x:          (B, don_num_x_nodes-2)  float32
+          query_points: (N_query, 1)             float32  — any resolution; drives output size
+
+        Returns:
+          u_pred: (B, N_query) on self.device, no CPU transfer.
+        """
+        with torch.no_grad():
+            branch_in, f_norm = self._normalize(k_x, f_x)
+            branch_out = self.branch_net(branch_in)                 # (B, f_dim)
+            trunk_out = self.trunk_net(query_points)                # (N_query, f_dim)
+            u_net = branch_out @ trunk_out.T                        # (B, N_query)
+            u_norm = u_net * f_norm
+            if self.hard_constraints is not None:
+                H_x = self.hard_constraints(query_points).squeeze(-1)
+                return u_norm * H_x
+            return u_norm
+
     def _preprocess_input(self, k_x, x_k, f_x, x_f, batch_size=None):
         if batch_size is None:
             batch_size = f_x.shape[0]

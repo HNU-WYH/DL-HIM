@@ -262,6 +262,21 @@ class FNS1d(NeuralOperatorBase):
         with torch.no_grad():
             return self.forward(k_x, f_x, trunk_input=query_points, **kwargs)["u_pred"].squeeze().cpu().detach().numpy()
 
+    def predict_tensor(self, k_x: torch.Tensor, f_x: torch.Tensor,
+                       query_points: torch.Tensor) -> torch.Tensor:
+        """
+        GPU-native inference: all tensors must already be on self.device.
+
+          k_x:          (B, N_model)      float32
+          f_x:          (B, N_model-2)    float32  — can differ from N_model-2 for FNS (size drives output)
+          query_points: (N_query, 1)      float32  — solver inner grid coords for hard-constraint scaling
+
+        Returns:
+          u_pred: (B, N_query) on self.device, no CPU transfer.
+        """
+        with torch.no_grad():
+            return self.forward(k_x, f_x, trunk_input=query_points)["u_pred"]
+
     def _preprocess_input(self, k_x, x_k, f_x, x_f, batch_size=None):
         if batch_size is None:
             batch_size = f_x.shape[0]

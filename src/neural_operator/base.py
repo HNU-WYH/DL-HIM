@@ -67,3 +67,7 @@ class NeuralOperatorBase(torch.nn.Module):
 
     def predict(self, **kwargs):
         pass
+
+    def predict_tensor(self, k_x, f_x, query_points):
+        """GPU-native inference. Inputs and output are torch.Tensors on self.device."""
+        raise NotImplementedError
