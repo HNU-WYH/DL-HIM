@@ -35,9 +35,9 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 CONFIG_WILDCARD = "diffusion*"
 TEST_GRID_NUM: Optional[int] = 801
 TEST_DATASET_PATH: Optional[str] = None
-SAMPLE_INDICES: Optional[Sequence[int]] = [0]
-MAX_ITER: Optional[int] = 1000
-TOL: Optional[float] = None
+SAMPLE_INDICES: Optional[Sequence[int]] = None
+MAX_ITER: Optional[int] = 4000
+TOL: Optional[float] = 1e-6  # early-stop threshold for all cases
 
 MODEL_PATHS: Dict[str, Optional[str]] = {
     "Default": "./checkpoints/fns_diffusion1d_fno/dynamic_error_l2/diffusion_1D_Grid31_Ep101_2026-04-17.pt",
@@ -236,7 +236,7 @@ def collect_history(solver: HybridSolver, u_ref_inner: np.ndarray,
         u_curr = u_next
         r_curr = r_next
 
-        if res_norm < tol:
+        if res_norm < tol and err_norm < tol:
             break
 
     return pad_series(residuals, max_iter), pad_series(errors, max_iter), pad_series(times, max_iter), u_curr
@@ -247,7 +247,11 @@ def evaluate_case_on_sample(base_cfg: Box, case: Dict,
                             max_iter: int = MAX_ITER, tol: float = TOL,
                             ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     cfg = apply_case_overrides(base_cfg, case)
-    max_iter = max_iter or case.get("max_iter") or cfg.problem.get("iteration", 200)
+    # Priority: case-level max_iter > global MAX_ITER > cfg default
+    if case.get("max_iter") is not None:
+        max_iter = case.get("max_iter")
+    elif max_iter is None:
+        max_iter = cfg.problem.get("iteration", 700)
     tol = tol or case.get("tol") or cfg.problem.get("tolerance", 1e-10)
 
     solver = HybridSolver(
@@ -273,7 +277,12 @@ def evaluate_case_on_sample(base_cfg: Box, case: Dict,
 
 
 def average_histories(histories: Iterable[np.ndarray]) -> np.ndarray:
-    return np.stack(list(histories), axis=0).mean(axis=0)
+    histories = list(histories)
+    if not histories:
+        return np.array([])
+    max_len = max(h.shape[0] for h in histories)
+    padded = [pad_series(h.tolist(), max_len) if len(h) < max_len else h for h in histories]
+    return np.stack(padded, axis=0).mean(axis=0)
 
 
 # =============================================================================
@@ -329,11 +338,21 @@ def find_first_time(values: np.ndarray, times: np.ndarray, threshold: float) -> 
     return float(times[np.argmax(mask)])
 
 
+def _safe_semilogy(ax, x, y, label, linewidth=1.5):
+    """Plot log-y curve, skipping non-positive points."""
+    x = np.asarray(x)
+    y = np.asarray(y)
+    mask = (x > 0) & (y > 0)
+    if not np.any(mask):
+        return
+    ax.semilogy(x[mask], y[mask], label=label, linewidth=linewidth)
+
+
 def plot_cost_curves(avg_results: Dict[str, Dict], output_path: Optional[str] = None):
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6, 7))
 
     for label, vals in avg_results.items():
-        ax1.semilogy(vals["time"], vals["error"], label=label, linewidth=1.5)
+        _safe_semilogy(ax1, vals["time"], vals["error"], label=label)
     ax1.set_title("Average Error Norm vs Wall-clock Time")
     ax1.set_xlabel("Time (s)")
     ax1.set_ylabel(r"$\ell_2$ Norm of Error")
@@ -341,7 +360,7 @@ def plot_cost_curves(avg_results: Dict[str, Dict], output_path: Optional[str] = 
     ax1.grid(True)
 
     for label, vals in avg_results.items():
-        ax2.semilogy(vals["time"], vals["residual"], label=label, linewidth=1.5)
+        _safe_semilogy(ax2, vals["time"], vals["residual"], label=label)
     ax2.set_title("Average Residual Norm vs Wall-clock Time")
     ax2.set_xlabel("Time (s)")
     ax2.set_ylabel(r"$\ell_2$ Norm of Residual")

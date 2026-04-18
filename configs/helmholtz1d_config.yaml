@@ -121,7 +121,7 @@ training:
 # ==========================================================
 solver:
   type: Hybrid                                 # "Hybrid", "Numerical", "Neural"
-  gpu_pipeline: true                           # true: full GPU closed-loop; false: GPU-CPU Hybrid
+  gpu_pipeline: false                          # true: full GPU closed-loop; false: GPU-CPU Hybrid
   numerical:
     method: jacobi                             # the numerical solver, "jacobi" or "GS"
     relaxation_factor:  0.6                    # the relaxation coefficient for the classical smoother
