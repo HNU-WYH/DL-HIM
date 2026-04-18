@@ -1,8 +1,8 @@
 *.pyc
 *.png
-/suggestion.md
 /%ckpt备份/
 /%temp/
 /.idea
 /.review
 /%others
+suggestion.md
