@@ -17,7 +17,11 @@ class StaticTrainer:
     def __init__(self, model: NeuralOperatorBase,
                  print_interval: int = 1000,
                  plot_interval: Optional[int] = 1000,
-                 plot_save_dir: Optional[str] = None,):
+                 plot_save_dir: Optional[str] = None,
+                 checkpoint_dir: Optional[str] = None,
+                 checkpoint_name: str = "model",
+                 save_interval: Optional[int] = None,
+                 save_best: bool = True,):
 
         self.model = model
         self.device = self.model.device
@@ -42,6 +46,12 @@ class StaticTrainer:
         self.print_interval = print_interval
         self.plot_interval = plot_interval
         self.plot_save_dir = plot_save_dir
+
+        self.checkpoint_dir = checkpoint_dir
+        self.checkpoint_name = checkpoint_name
+        self.save_interval = save_interval
+        self.save_best = save_best
+        self._best_val_loss = float("inf")
 
         self.train_losses, self.val_losses = [], []
         self.k_train = self.f_train = self.u_train = self.du_train = self.a_mats_train = None
@@ -188,6 +198,15 @@ class StaticTrainer:
             if epoch % self.print_interval == 0 or epoch == self.epochs - 1:
                 print(f"Epoch [{epoch}/{self.epochs}], Train Loss: {train_loss: .4e}, Val Loss: {val_loss: .4e}")
 
+            # periodic checkpoint
+            if self.save_interval and (epoch + 1) % self.save_interval == 0:
+                self._save_checkpoint(epoch + 1, tag=f"ep{epoch + 1}")
+
+            # best-val checkpoint
+            if self.save_best and val_loss < self._best_val_loss:
+                self._best_val_loss = val_loss
+                self._save_checkpoint(epoch + 1, tag="best")
+
             self._maybe_plot_validation(epoch, val_pred)
 
         if torch.cuda.is_available():
@@ -209,6 +228,16 @@ class StaticTrainer:
         self.train_losses, self.val_losses = np.array(self.train_losses), np.array(self.val_losses)
         self._plot_loss_history(out_path=self.plot_save_dir)
         return self.train_losses, self.val_losses
+
+    def _save_checkpoint(self, epoch: int, tag: str):
+        if self.checkpoint_dir is None:
+            return
+        import torch
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        fname = f"{self.checkpoint_name}_{tag}.pt"
+        path = os.path.join(self.checkpoint_dir, fname)
+        torch.save(self.model.state_dict(), path)
+        print(f"[Checkpoint] saved → {path}  (epoch={epoch}, best_val={self._best_val_loss:.4e})")
 
     def _maybe_plot_validation(self, epoch, val_pred):
         if self.plot_interval is None:

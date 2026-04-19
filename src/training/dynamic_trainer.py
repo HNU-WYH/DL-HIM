@@ -20,6 +20,9 @@ class DynamicTrainer:
                  print_interval: int = 1000,
                  plot_interval: int = 1000,
                  plot_save_dir: Optional[str] = None,
+                 checkpoint_dir: Optional[str] = None,
+                 checkpoint_name: str = "model",
+                 save_best: bool = True,
                  ):
 
         # Initialization
@@ -58,6 +61,11 @@ class DynamicTrainer:
         self.plot_save_dir = plot_save_dir
         self.sole_plot_dir = os.path.join(plot_save_dir, "sole_operator") if plot_save_dir else None
         self.rollout_plot_dir = os.path.join(plot_save_dir, "hybrid_rollout") if plot_save_dir else None
+
+        self.checkpoint_dir = checkpoint_dir
+        self.checkpoint_name = checkpoint_name
+        self.save_best = save_best
+        self._best_val_loss: float = float("inf")
 
         # dataset initialization
         self.train_losses, self.val_losses = [], []
@@ -331,6 +339,10 @@ class DynamicTrainer:
                 print(f"Epoch [{epoch}/{self.epochs}], Train Loss: {train_loss: .4e}, "
                       f"Val Loss: {val_loss: .4e}, Horizon: {self.current_horizon}")
 
+            if self.save_best and val_loss < self._best_val_loss:
+                self._best_val_loss = val_loss
+                self._save_checkpoint(epoch + 1, tag="best")
+
             self._maybe_sole_validation(epoch, val_pred)
             self._maybe_rollout_validation(epoch)
 
@@ -355,6 +367,15 @@ class DynamicTrainer:
         self.train_losses, self.val_losses = np.array(self.train_losses), np.array(self.val_losses)
         self._plot_loss_history(out_path=self.plot_save_dir)
         return self.train_losses, self.val_losses
+
+    def _save_checkpoint(self, epoch: int, tag: str):
+        if self.checkpoint_dir is None:
+            return
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        fname = f"{self.checkpoint_name}_{tag}.pt"
+        path = os.path.join(self.checkpoint_dir, fname)
+        torch.save(self.model.state_dict(), path)
+        print(f"[Checkpoint] saved → {path}  (epoch={epoch}, best_val={self._best_val_loss:.4e})")
 
     def _maybe_sole_validation(self, epoch: int, val_pred: torch.Tensor):
         if self.plot_interval is None:

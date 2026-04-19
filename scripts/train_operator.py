@@ -14,8 +14,12 @@ TRAINER_TYPE = "static"           # "static" or "dynamic"
 DATASET_PATH = None               # path to .npz dataset; None -> config default
 LOSS_NORM = None                  # "l1", "l2", or "h1"; None -> config default
 LOSS_TYPE = None                  # "error" or "residual"; None -> config default
-SAVE_AFTER_TRAIN = True           # whether save the trained neural operator model
-PRINT_INTERVAL = 1000             # Interval of printing; DeepONet recommend 1000, FNS recommend 100;
+SAVE_AFTER_TRAIN = True           # save final checkpoint after training
+PRINT_INTERVAL = 100              # Interval of printing; DeepONet recommend 1000, FNS recommend 100
+
+# --- Checkpoint saving -------------------------------------------------------
+SAVE_INTERVAL = 100               # static only: save every N epochs (None = disabled)
+SAVE_BEST = True                  # save best-val-loss checkpoint (both trainers)
 
 
 def apply_training_overrides(cfg: Box,
@@ -39,15 +43,21 @@ def apply_training_overrides(cfg: Box,
     return cfg
 
 
-def select_trainer(model, trainer_type: str = TRAINER_TYPE, save_path=None, print_interval=PRINT_INTERVAL):
+def select_trainer(model, trainer_type: str = TRAINER_TYPE, save_path=None,
+                   print_interval=PRINT_INTERVAL, checkpoint_name="model",
+                   save_interval=SAVE_INTERVAL, save_best=SAVE_BEST):
     """Return the proper trainer object based on the configuration."""
     trainer_type = trainer_type.lower()
 
     if trainer_type == "dynamic":
-        return DynamicTrainer(model, plot_save_dir=save_path, print_interval=print_interval)
+        return DynamicTrainer(model, plot_save_dir=save_path, print_interval=print_interval,
+                              checkpoint_dir=save_path, checkpoint_name=checkpoint_name,
+                              save_best=save_best)
 
     if trainer_type == "static":
-        return StaticTrainer(model, plot_save_dir=save_path, print_interval=print_interval)
+        return StaticTrainer(model, plot_save_dir=save_path, print_interval=print_interval,
+                             checkpoint_dir=save_path, checkpoint_name=checkpoint_name,
+                             save_interval=save_interval, save_best=save_best)
 
     raise ValueError(f"Trainer type {trainer_type} not supported")
 
@@ -69,8 +79,10 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
                    trainer_type=TRAINER_TYPE,
                    save_after_train=SAVE_AFTER_TRAIN,
                    print_interval=PRINT_INTERVAL,
+                   save_interval=SAVE_INTERVAL,
+                   save_best=SAVE_BEST,
                    ):
-    """Train a DeepONet model according to the given configuration"""
+    """Train a neural operator according to the given configuration."""
     cfg = load_config(config_wildcard)
     cfg = apply_training_overrides(cfg, loss_type, loss_norm, dataset_path, trainer_type)
 
@@ -78,8 +90,16 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
     ckpt_base = ckpt_dir(cfg)
     os.makedirs(ckpt_base, exist_ok=True)
 
+    # checkpoint filename prefix: e.g. "diffusion_1D_Grid31"
+    problem = cfg.problem.type.lower()
+    n_dim = cfg.problem.n_dim
+    grid_num = cfg.training.mesh.grid_num
+    ckpt_name = f"{problem}_{n_dim}D_Grid{grid_num}"
+
     model = create_no(cfg)
-    trainer = select_trainer(model, trainer_type, save_path=ckpt_base, print_interval=print_interval)
+    trainer = select_trainer(model, trainer_type, save_path=ckpt_base,
+                             print_interval=print_interval, checkpoint_name=ckpt_name,
+                             save_interval=save_interval, save_best=save_best)
     dataset = np.load(cfg.dataset_path, allow_pickle=True)
 
     trainer.load_dataset(dataset)
@@ -122,27 +142,30 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
     # ==============================================================
 
 
-def batch_train(trainer_types=("static",),        #, "dynamic", ),
+def batch_train(trainer_types=("static",),
                 loss_types=("residual", "error"),
                 loss_norms=("l2", "l1", "h1"),
                 config_wildcard=CONFIG_WILDCARD,
                 dataset_path=DATASET_PATH,
                 save_after_train=SAVE_AFTER_TRAIN,
                 print_interval=PRINT_INTERVAL,
+                save_interval=SAVE_INTERVAL,
+                save_best=SAVE_BEST,
                 ):
     """
-    Checkpoints will be saved under:
+    Checkpoints saved under:
     ./checkpoints/{operator_type}_{problem_name}{dimension}/{trainer_type}_{loss_type}_{loss_norm}/
-    """
 
+    Within each run:
+      {name}_ep{N}.pt   — periodic snapshot (static only, every save_interval epochs)
+      {name}_best.pt    — best validation loss so far (both trainers)
+      {name}.pt         — final checkpoint (if save_after_train=True)
+    """
     for trainer_type in trainer_types:
         for loss_type in loss_types:
             for loss_norm in loss_norms:
                 print("=" * 80)
-                print(
-                    f"Start training: trainer={trainer_type}, "
-                    f"loss_type={loss_type}, loss_norm={loss_norm}. "
-                )
+                print(f"Start training: trainer={trainer_type}, loss_type={loss_type}, loss_norm={loss_norm}.")
                 print("=" * 80)
 
                 try:
@@ -153,6 +176,8 @@ def batch_train(trainer_types=("static",),        #, "dynamic", ),
                                    trainer_type=trainer_type,
                                    save_after_train=save_after_train,
                                    print_interval=print_interval,
+                                   save_interval=save_interval,
+                                   save_best=save_best,
                     )
                 except Exception as e:
                     print(f"FAILED: trainer={trainer_type}, loss_type={loss_type}, loss_norm={loss_norm} -> {e}")
