@@ -84,9 +84,9 @@ testing:
 # ============================
 training:
   mode: static                      # "static" or "dynamic"
-  operator_type: FNS                # Neural Operator Type ("DeepONet", "MIONet", "FNS")
+  operator_type: FNS           # Neural Operator Type ("DeepONet", "MIONet", "FNS")
   batch_size: 1024                  # batch size
-  num_epoch: 101                   # Epoch num
+  num_epoch: 101                  # Epoch num
   lr: 0.0001                        # learning rate
   weight_decay: !!float 1e-8        # weight decay
 
@@ -98,6 +98,10 @@ training:
     grad_alpha: 0.1                 # weight for gradient term
     use_autograd: false             # for static trainer: True -> use model-provided du; False -> FD
                                     # for dynamic trainer: True/False -> FD
+
+  grad_clip:
+    enabled: true                   # whether to apply gradient clipping
+    max_norm: 25.0                  # max norm for gradient clipping (recommended for K=10)
 
   don_setting:                      # configs for DeepONet/MIONet (Meaningless for FNS)
     f_dim: 80                       # the dimension for output of branch_net & trunk_net
@@ -113,7 +117,7 @@ training:
     horizon_size: 10                # the num of future step in dynamic training framework
     curriculum:                     # curriculum learning
       enabled: true                 # true/True or false/False
-      update_interval: 10         # horizon++ for each update interval
+      update_interval: 10           # horizon++ for each update interval
 
 
 # ==========================================================

@@ -1,3 +1,4 @@
+
 """
 Dynamic vs Static Training Analysis Script for DL-HIM
 ======================================================
@@ -10,9 +11,6 @@ Responsibilities
 - Error / Residual vs Iteration plots grouped by training paradigm
 - Speedup tables relative to a chosen baseline
 - Raw data export (.npz) for reproducible replotting
-
-Self-contained: does not import from evaluate_single_solver.py.
-Configure all settings via the uppercase constants below.
 
 CASES styling convention:
   group     : "static" | "dynamic" — controls linestyle (dashed vs solid)
@@ -40,11 +38,11 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 # Configuration
 # =============================================================================
 CONFIG_WILDCARD = "diffusion*"
-TEST_GRID_NUM: Optional[int] = 201          # grid used during evaluation
+TEST_GRID_NUM: Optional[int] = 601          # grid used during evaluation
 TEST_DATASET_PATH: Optional[str] = None
 SAMPLE_INDICES: Optional[Sequence[int]] = None
 MAX_ITER: Optional[int] = 2000
-TOL: Optional[float] = 1e-6
+TOL: Optional[float] = 1e-8
 
 # --- Shared solver settings (applied to every case) -------------------------
 # Override per-case if needed by adding the same key inside the case dict.
@@ -60,13 +58,15 @@ SHARED_SOLVER = dict(
 # --- Model checkpoints -------------------------------------------------------
 # Keys are referenced by CASES["model"]. Fill in the actual .pt paths.
 MODEL_PATHS: Dict[str, str] = {
-    # Static checkpoints (FNO-based FNS, residual loss, l2 norm)
-    "static_ep100": "./checkpoints/fns_diffusion1d_fno/static_residual_l2/diffusion_1D_Grid31_Ep101_2026-04-17.pt",
-    "static_ep300": "./checkpoints/fns_diffusion1d_fno/static_residual_l2/diffusion_1D_Grid31_Ep301_2026-04-17.pt",
-    "static_ep500": "./checkpoints/fns_diffusion1d_fno/static_residual_l2/diffusion_1D_Grid31_Ep501_2026-04-17.pt",
-    "static_ep700": "./checkpoints/fns_diffusion1d_fno/static_residual_l2/diffusion_1D_Grid31_Ep701_2026-04-17.pt",
-    # Dynamic checkpoint (curriculum K=1→10, same epoch budget as static_ep100)
-    "dynamic_ep100": "./checkpoints/fns_diffusion1d_fno/dynamic_residual_l2/diffusion_1D_Grid31_Ep101_2026-04-17.pt",
+    # Static checkpoints
+    "static": "./checkpoints/deeponet_diffusion1d/static_residual_l2/diffusion_1D_Grid31_ep20000.pt",
+    # "static": "./checkpoints/fns_diffusion1d_fno/static_error_l2/diffusion_1D_Grid31_ep100.pt",
+
+
+    # Dynamic checkpoint (curriculum K=1→10, same epoch budget as static)
+    "dynamic": "./checkpoints/deeponet_diffusion1d/dynamic_residual_l2/diffusion_1D_Grid31_ep20000.pt",
+    # "dynamic": "./checkpoints/fns_diffusion1d_fno/dynamic_error_l2/diffusion_1D_Grid31_ep100.pt",
+
 }
 
 # --- Cases -------------------------------------------------------------------
@@ -74,15 +74,12 @@ MODEL_PATHS: Dict[str, str] = {
 # group / color / linestyle are purely for plotting; all other keys go to the solver.
 CASES: List[Dict] = [
     # ── Static ──────────────────────────────────────────────────────────────
-    {"label": "Static (ep=100)",  "model": "static_ep100",  "group": "static",  "color": "C0", "linestyle": "--"},
-    {"label": "Static (ep=300)",  "model": "static_ep300",  "group": "static",  "color": "C1", "linestyle": "--"},
-    {"label": "Static (ep=500)",  "model": "static_ep500",  "group": "static",  "color": "C2", "linestyle": "--"},
-    {"label": "Static (ep=700)",  "model": "static_ep700",  "group": "static",  "color": "C3", "linestyle": "--"},
+    {"label": "Static",  "model": "static", "group": "static",  "color": "black", "linestyle": "--"},
     # ── Dynamic (curriculum K=1→10) ─────────────────────────────────────────
-    {"label": "Dynamic (ep=100, K=10)", "model": "dynamic_ep100", "group": "dynamic", "color": "C4", "linestyle": "-"},
+    {"label": "Dynamic (K=10)", "model": "dynamic", "group": "dynamic", "color": "C0", "linestyle": "-"},
 ]
 
-BASELINE: str = "Static (ep=100)"   # label of the speedup reference case
+BASELINE: str = "Static"   # label of the speedup reference case
 OUTPUT_PATH: Optional[str] = "results/dynamic_static_analysis.pdf"
 SAVE_TABLE_PATH: Optional[str] = "results/dynamic_static_speedup.md"
 
@@ -373,14 +370,14 @@ def find_first_iter(values: np.ndarray, iters: np.ndarray, threshold: float) -> 
     return int(iters[np.argmax(mask)])
 
 
-def _safe_semilogy(ax, x, y, label, linewidth=1.5):
+def _safe_semilogy(ax, x, y, label, linewidth=1.5, **kwargs):
     """Plot log-y curve, skipping non-positive points."""
     x = np.asarray(x)
     y = np.asarray(y)
     mask = (x > 0) & (y > 0)
     if not np.any(mask):
         return
-    ax.semilogy(x[mask], y[mask], label=label, linewidth=linewidth)
+    ax.semilogy(x[mask], y[mask], label=label, linewidth=linewidth, **kwargs)
 
 
 def _case_style(case: Dict) -> Dict:
@@ -432,11 +429,14 @@ def plot_cost_curves(avg_results: Dict[str, Dict], cases: List[Dict],
 
     plt.tight_layout()
     if output_path:
+        output_path = _resolve_output_path(output_path)
         os.makedirs(os.path.dirname(output_path), exist_ok=True) if os.path.dirname(output_path) else None
         plt.savefig(output_path, dpi=300, bbox_inches="tight")
         print(f"Figure saved to: {output_path}")
+        return output_path
     else:
         plt.show()
+        return None
 
 
 def build_iter_table(avg_results: Dict[str, Dict], baseline_label: str,
@@ -467,6 +467,19 @@ def build_iter_table(avg_results: Dict[str, Dict], baseline_label: str,
     return "\n".join(lines)
 
 
+def _resolve_output_path(path: str) -> str:
+    """Auto-increment filename if it already exists (e.g. file.pdf -> file_1.pdf)."""
+    if not path or not os.path.exists(path):
+        return path
+    base, ext = os.path.splitext(path)
+    counter = 1
+    while True:
+        new_path = f"{base}_{counter}{ext}"
+        if not os.path.exists(new_path):
+            return new_path
+        counter += 1
+
+
 def save_raw_data(avg_results: Dict[str, Dict], output_path: str):
     data_dict = {}
     for label, vals in avg_results.items():
@@ -481,7 +494,7 @@ def save_raw_data(avg_results: Dict[str, Dict], output_path: str):
 if __name__ == "__main__":
     avg_results = run_cost_evaluation()
 
-    plot_cost_curves(avg_results, cases=CASES, output_path=OUTPUT_PATH)
+    actual_output_path = plot_cost_curves(avg_results, cases=CASES, output_path=OUTPUT_PATH)
 
     print(f"\nBaseline for iteration count: {BASELINE}\n")
 
@@ -498,14 +511,15 @@ if __name__ == "__main__":
     print(residual_table)
 
     if SAVE_TABLE_PATH:
-        os.makedirs(os.path.dirname(SAVE_TABLE_PATH), exist_ok=True) if os.path.dirname(SAVE_TABLE_PATH) else None
-        with open(SAVE_TABLE_PATH, "w", encoding="utf-8") as f:
+        actual_table_path = _resolve_output_path(SAVE_TABLE_PATH)
+        os.makedirs(os.path.dirname(actual_table_path), exist_ok=True) if os.path.dirname(actual_table_path) else None
+        with open(actual_table_path, "w", encoding="utf-8") as f:
             f.write(f"# Dynamic vs Static — Iterations to Threshold (baseline: {BASELINE})\n\n")
             f.write("## Error-based\n\n")
             f.write(error_table + "\n\n")
             f.write("## Residual-based\n\n")
             f.write(residual_table + "\n")
-        print(f"\nTable saved to: {SAVE_TABLE_PATH}")
+        print(f"\nTable saved to: {actual_table_path}")
 
-    if OUTPUT_PATH:
-        save_raw_data(avg_results, OUTPUT_PATH)
+    if actual_output_path:
+        save_raw_data(avg_results, actual_output_path)

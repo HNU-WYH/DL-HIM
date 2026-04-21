@@ -52,6 +52,7 @@ class StaticTrainer:
         self.save_interval = save_interval
         self.save_best = save_best
         self._best_val_loss = float("inf")
+        self._last_best_path: Optional[str] = None
 
         self.train_losses, self.val_losses = [], []
         self.k_train = self.f_train = self.u_train = self.du_train = self.a_mats_train = None
@@ -205,7 +206,10 @@ class StaticTrainer:
             # best-val checkpoint
             if self.save_best and val_loss < self._best_val_loss:
                 self._best_val_loss = val_loss
-                self._save_checkpoint(epoch + 1, tag="best")
+                if self._last_best_path is not None and os.path.exists(self._last_best_path):
+                    os.remove(self._last_best_path)
+                best_fname = f"{self.checkpoint_name}_best_ep{epoch + 1}.pt"
+                self._last_best_path = self._save_checkpoint(epoch + 1, tag="best", fname=best_fname)
 
             self._maybe_plot_validation(epoch, val_pred)
 
@@ -229,15 +233,16 @@ class StaticTrainer:
         self._plot_loss_history(out_path=self.plot_save_dir)
         return self.train_losses, self.val_losses
 
-    def _save_checkpoint(self, epoch: int, tag: str):
+    def _save_checkpoint(self, epoch: int, tag: str, fname: Optional[str] = None):
         if self.checkpoint_dir is None:
-            return
-        import torch
+            return None
         os.makedirs(self.checkpoint_dir, exist_ok=True)
-        fname = f"{self.checkpoint_name}_{tag}.pt"
+        if fname is None:
+            fname = f"{self.checkpoint_name}_{tag}.pt"
         path = os.path.join(self.checkpoint_dir, fname)
         torch.save(self.model.state_dict(), path)
         print(f"[Checkpoint] saved → {path}  (epoch={epoch}, best_val={self._best_val_loss:.4e})")
+        return path
 
     def _maybe_plot_validation(self, epoch, val_pred):
         if self.plot_interval is None:

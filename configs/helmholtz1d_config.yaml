@@ -99,6 +99,10 @@ training:
     use_autograd: false             # for static trainer: True -> use model-provided du; False -> FD
                                     # for dynamic trainer: True/False -> FD, as autograd is not appropriate
 
+  grad_clip:
+    enabled: true                  # whether to apply gradient clipping
+    max_norm: 25.0                  # max norm for gradient clipping (recommended for K=10)
+
   don_setting:                      # configs for DeepONet/MIONet (Meaningless for FNS)
     f_dim: 80                       # the dimension for output of branch_net & trunk_net
     hard_cons: True                 # whether to apply the hard constraints in the neural network
