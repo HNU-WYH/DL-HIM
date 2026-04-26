@@ -1,4 +1,5 @@
 from src.problems.diffusion1d import Diffusion1D
+from src.problems.diffusion2d import Diffusion2D
 from src.problems.helmholtz1d import Helmholtz1D
 from src.problems.convdiff1d import ConvectionDiffusion1D
 
@@ -10,6 +11,7 @@ from src.problems.convdiff1d import ConvectionDiffusion1D
 Problems = {
     "poisson":      Diffusion1D,
     "diffusion":    Diffusion1D,
+    "diffusion2D":    Diffusion2D,
     "helmholtz":    Helmholtz1D,
     "convdiff":     ConvectionDiffusion1D,
 }

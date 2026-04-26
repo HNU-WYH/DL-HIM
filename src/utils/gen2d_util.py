@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 import pickle
+import cartesian
 
 
 def load_pkl_file(dataset_path):
@@ -27,9 +28,20 @@ def load_pkl_file(dataset_path):
     else:
         raise ValueError("Unsupported file format. Only .pkl files are supported.")
 
+def get_boundary2D(x):
+    # initial value problem
+    b_x0 = cartesian.product(np.array([x[0]]), x)
+    b_x1 = cartesian.product(np.array([x[-1]]), x)
+    b_y0 = cartesian.product(np.array(x[1:-1]), np.array([x[0]]))
+    b_y1 = cartesian.product(np.array(x[1:-1]), np.array([x[-1]]))
+    return np.concatenate((b_x0, b_x1, b_y0, b_y1), axis = 0)
 
 def generate_uniform_grid(num_points):
     x_uniform = np.linspace(0.0, 1.0, num_points)
+    x_inner = x_uniform[1:-1]
+    x_inner = cartesian.power(x_inner, dimension=2)
+    x_boundary = get_boundary2D(x_inner)
+    x_uniform = np.concatenate((x_inner, x_boundary), axis=0)
     return x_uniform
 
 
@@ -58,10 +70,10 @@ def generate_x_nodes(grid_type, num_points):
 
     if grid_type == 'uniform':
         return generate_uniform_grid(num_points)
-    elif grid_type == 'power':
-        return generate_power_law_grid(num_points)
-    elif grid_type == 'tanh':
-        return generate_tanh_clustered_grid(num_points)
+    #elif grid_type == 'power':
+    #    return generate_power_law_grid(num_points)
+    #elif grid_type == 'tanh':
+    #    return generate_tanh_clustered_grid(num_points)
     else:
         raise ValueError(f"Unknown grid type: {grid_type}")
 
@@ -70,8 +82,9 @@ def grf_generate(x_nodes, func_num, sigma, l0, mean=0.0, minimal=None, **kwargs)
     """
     Guassian Random Field
     """
-    x_num = len(x_nodes)                          # (x_num,)
-    r_square = (x_nodes - x_nodes[:, None])**2    # (x_num, x_num)
+    x_num  = x_nodes.shape[0]                          # (x_num,)
+    r_square = (x_nodes.reshape(x_num,1, x_nodes.shape[1]) - x_nodes.reshape(1,-1))**2    # (x_num, x_num, 2)
+    r_square = np.sum(r_square, axis=2)                # (x_num, x_num)
     covariance_matrix = np.zeros((x_num, x_num))  # (x_num, x_num)
 
     target_num = func_num  # cache desired batch size
