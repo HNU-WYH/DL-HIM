@@ -4,63 +4,65 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
 
-def build_diffusion_matrix_1d(x, k_x, mat_type="sparse"):
+def build_diffusion_matrix_2d(n_grid, h, x, k_x, mat_type="sparse"):
     """
     Build the FDM matrix of a diffusion operator -d(d k(x) u(x)).
     The matrix includes boundary rows/cols.
 
-    for each inner grid point i, we have
-    -d( k(i) d u(i)) = (F_{i+1/2} - F_{i-1/2}) / (x_{i+1/2} - x_{i-1/2)
-    where:
-        - F_{i+1/2} = k_{i+1/2}(u_{i+1}-u_i)/(x_{i+1}-x_i)
-        - F_{i-1/2} = k_{i-1/2}(u_i-u_{i-1})/(x_i-x_{i-1})
-        - k_{i+1/2} = (k_{i}+k_{i+1})/2
-        - k_{i-1/2} = (k_{i}+k_{i-1})/2
+    for each inner grid point p = n_grid * i + j, we have
+    -d( k(p)d u(p)) = (F_{p+1/2} - F_{p-1/2}) / (x_{p+1/2} - x_{p-1/2)
+    where:  
+        - F_{p+1/2} = k_{p+1/2}(u_{p+1}-u_p)/(x_{p+1}-x_p)
+        - F_{p-1/2} = k_{p-1/2}(u_p-u_{p-1})/(x_p-x_{p-1})
+        - k_{p+1/2} = (k_{p}+k_{p+1})/2
+        - k_{p-1/2} = (k_{p}+k_{p-1})/2
     Args:
-        x: (n,)
-        k_x: (n,) or (1,) or (n-1,)
+        x: (n, 2)
+        k_x: (n, ) 
         mat_type: "sparse" or "dense"
 
     Returns:
         A (n, n)
     """
-    n = len(x)
-    if np.isscalar(k_x) or len(k_x) == 1:
-        k_x = np.ones(n - 1) * k_x
-    elif len(k_x) == n:
-        k_x = 0.5 * (k_x[:-1] + k_x[1:])
+    n = x.shape[0]
+    assert n == n_grid ** 2
+    x = np.asarray(x, dtype=float).reshape(n_grid, n_grid, 2)
+    k_x = np.asarray(k_x, dtype=float).reshape(n_grid, n_grid)
+
         # warnings.warn("convert k_x from (n,) to (n-1,)")
-    elif len(k_x) == n - 1:
-        pass
-    else:
-        raise ValueError("k_x must be scalar, or have length len(x) or len(x)-1")
 
-    if mat_type.lower() == "sparse":
-        Ap = sp.lil_matrix((n, n))  # (n, n)
-    else:
-        Ap = np.zeros(shape=(n, n), dtype=float)  # (n, n)
+    #if mat_type.lower() == "sparse":
+    #    Ap = sp.lil_matrix((n, n))  # (n, n)
+    #    Dx = sp.lil_matrix((n, n))  # (n, n)
+    #    Dy = sp.lil_matrix((n, n))  # (n, n)
 
-    # whether the mesh is uniformly spaced
-    h = np.diff(x)  # (n-1,)
-    uniform = np.allclose(h, h[0])
-    if uniform:
-        h = h[0]
-        for i in range(1, n - 1):
-            Ap[i, i - 1] = -k_x[i - 1] / h ** 2
-            Ap[i, i + 1] = -k_x[i] / h ** 2
-            Ap[i, i] = -Ap[i, i - 1] - Ap[i, i + 1]
+    Dx = np.zeros(shape=(n, n), dtype=float)  # (n, n)
+    Dy = np.zeros(shape=(n, n), dtype=float)  # (n, n)
 
-    else:
-        for i in range(1, n - 1):
-            # (0) & (n-1) is the boundary
-            h_mean = 0.5 * (h[i - 1] + h[i])
+        
+    # build dy(k dy)[ ]
+    for i in range(0, n_grid):
+        y_cur = x[i, :, 1]
+        k_cur = k_x[i, :]
+        k_cur = 0.5 * (k_cur[:-1] + k_cur[1:])
+        for j in range(1, n_grid - 1):
+            q = i * n_grid + j
+            Dy[q,q-1] = -k_cur[j-1] / h**2
+            Dy[q,q + 1] = -k_cur[j] / h**2
+            Dy[q,q] = -Dy[q,q-1] - Dy[q,q+1]
 
-            c_left = k_x[i - 1] / (h_mean * h[i - 1])
-            c_right = k_x[i] / (h_mean * h[i])
+    # build dx(k dx)[ ]
+    for j in range(0, n_grid):
+        x_cur = x[:, j, 0]
+        k_cur = k_x[:, j]
+        k_cur = 0.5 * (k_cur[:-1] + k_cur[1:])
+        for i in range(1, n_grid - 1):
+            q = i * n_grid + j
+            Dx[q,q-n_grid] = -k_cur[i-1] / h**2
+            Dx[q,q + n_grid] = -k_cur[i] / h**2
+            Dx[q,q] = -Dx[q,q-n_grid] - Dx[q,q+n_grid]
 
-            Ap[i, i - 1] = -c_left
-            Ap[i, i + 1] = -c_right
-            Ap[i, i] = c_left + c_right
+    Ap = Dx + Dy
 
     return Ap
 

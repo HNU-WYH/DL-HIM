@@ -38,10 +38,7 @@ def get_boundary2D(x):
 
 def generate_uniform_grid(num_points):
     x_uniform = np.linspace(0.0, 1.0, num_points)
-    x_inner = x_uniform[1:-1]
-    x_inner = cartesian.power(x_inner, dimension=2)
-    x_boundary = get_boundary2D(x_inner)
-    x_uniform = np.concatenate((x_inner, x_boundary), axis=0)
+    x_uniform = cartesian.power(x_uniform, dimension=2)
     return x_uniform
 
 
@@ -160,5 +157,8 @@ function_generators = {
     "gaussian": gaussian_generate
 }
 
-array = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
-print(array[:,None].shape)
+if __name__ == "__main__":
+    x_nodes = generate_x_nodes("uniform", 10)
+    #x_nodes = x_nodes.reshape(10,10,2)
+    print(x_nodes[0,:])
+    print(x_nodes[:,0])
