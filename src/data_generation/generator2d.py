@@ -41,7 +41,7 @@ class DataGenerator2d:
             self.redundant_func_num = self.func_num
 
     def __init_data(self):
-        num_points = (self.config.data.mesh.grid_num - 2)**2                       # n
+        num_points = (self.config.data.mesh.grid_num - 2)**2                       # inner points
         u = np.zeros(shape=(self.redundant_func_num, num_points))       # (b, (n-2)^2) with inner points only
         du = np.zeros(shape=(self.redundant_func_num, num_points, 2))   #                                             # (b, (n-2)^2) with inner points only
 
