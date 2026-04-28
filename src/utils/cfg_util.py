@@ -5,6 +5,7 @@ import torch
 import numpy as np
 from box import Box
 from glob import glob
+from pathlib import Path
 
 
 # from utils.dl_util import find_available_model
@@ -12,8 +13,8 @@ from glob import glob
 
 
 def get_project_root():
-    script_dir = os.path.abspath(__file__)
-    project_dir = script_dir.split("\\src")[0]
+    # should work on Windows too
+    project_dir = Path(__file__).parents[2]
     return project_dir
 
 

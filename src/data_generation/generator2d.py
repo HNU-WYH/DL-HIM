@@ -5,8 +5,8 @@ from tqdm import tqdm
 from box import Box
 
 from src.problems import create_problem
-from src.utils.fdm_utils import expand_solution
-from src.utils.gen1d_util import generate_x_nodes, function_generators
+from src.utils.fdm2d_utils import expand_solution
+from src.utils.gen2d_util import generate_x_nodes, function_generators, get_boundary_inner_idx
 
 # import matplotlib.pyplot as plt
 # from scipy.integrate import solve_bvp
@@ -27,8 +27,8 @@ class DataGenerator2d:
         self.dataset = None
         self.eps = config.data.get("eps", 1.0)
         self.x_nodes = generate_x_nodes(config.data.mesh.grid_type, config.data.mesh.grid_num)
-
-        if self.problem not in ["poisson", "diffusion", "helmholtz", "convdiff"]:
+        self.bc_idx, self.inner_idx = get_boundary_inner_idx(self.x_nodes)
+        if self.problem not in ["diffusion2d"]:
             raise NotImplementedError(f"{self.problem} problem is not supported")
         self.u_generator = create_problem(self.problem)
 
@@ -41,9 +41,9 @@ class DataGenerator2d:
             self.redundant_func_num = self.func_num
 
     def __init_data(self):
-        num_points = self.config.data.mesh.grid_num                       # n
-        u = np.zeros(shape=(self.redundant_func_num, (num_points-2)**2))       # (b, (n-2)^2) with inner points only
-        du = np.zeros_like(u)                                             # (b, (n-2)^2) with inner points only
+        num_points = (self.config.data.mesh.grid_num - 2)**2                       # n
+        u = np.zeros(shape=(self.redundant_func_num, num_points))       # (b, (n-2)^2) with inner points only
+        du = np.zeros(shape=(self.redundant_func_num, num_points, 2))   #                                             # (b, (n-2)^2) with inner points only
 
         a_mats = []                   # empty for appending with final size (b, n-2, n-2)
         f_inner_data = []             # empty for appending with final size (b,
@@ -73,8 +73,8 @@ class DataGenerator2d:
             pbar = tqdm(total=self.redundant_func_num)
             while idx < self.redundant_func_num:
                 k, f = k_data[idx], f_data[idx]
-                u_gen = self.u_generator(self.x_nodes, k, f, eps=self.eps)
-                solution = u_gen.solve(u_left=0.0, u_right=0.0, method=self.solver)
+                u_gen = self.u_generator(self.x_nodes, self.bc_idx, self.inner_idx, k, f, eps=self.eps)
+                solution = u_gen.solve(u_bc=0.0, method=self.solver)
 
                 A_inner = solution['A_inner']
                 if hasattr(A_inner, "toarray"):
@@ -137,7 +137,8 @@ class DataGenerator2d:
 
         if save_flag:
             if self.dataset is None:
-                self.generate_data(True)
+                #remove seed later
+                self.generate_data(True, seed=42)
 
             k_mean = np.mean(self.dataset["k_data_train"])
             k_std = np.std(self.dataset["k_data_train"])
@@ -184,7 +185,7 @@ class DataGenerator2d:
         return u, du, a_mats
 
 
-class TestDataGenerator(DataGenerator1d):
+class TestDataGenerator(DataGenerator2d):
     def __init__(self, config: Box, test_num = None):
         self.config = config
         self.testing_cfg = config.get("testing", Box())
@@ -213,6 +214,7 @@ class TestDataGenerator(DataGenerator1d):
         self.grid_num = self.testing_cfg.mesh.grid_num
         self.grid_type = self.testing_cfg.mesh.grid_type
         self.x_nodes = generate_x_nodes(self.grid_type, self.grid_num)
+        self.bc_idx, self.inner_idx = get_boundary_inner_idx(self.x_nodes)
 
     def __generate_k_base(self):
         """
@@ -250,15 +252,15 @@ class TestDataGenerator(DataGenerator1d):
                     f_curr = f_batch[idx]
 
                     # Solving the system
-                    solver_inst = self.u_generator(self.x_nodes, k_curr, f_curr, eps=self.eps)
-                    solution = solver_inst.solve(u_left=0.0, u_right=0.0, method=self.solver)
+                    solver_inst = self.u_generator(self.x_nodes, self.bc_idx, self.inner_idx, k_curr, f_curr, eps=self.eps)
+                    solution = solver_inst.solve(u_bc=0.0, method=self.solver)
 
                     # Assign the solution
                     A_inner = solution['A_inner']                                   # [N-2, N-2]
                     if hasattr(A_inner, "toarray"): A_inner = A_inner.toarray()     # [N-2, N-2]
 
                     u_list.append(solution['u_inner'])                              # [N-2, ]
-                    du_list.append(solution['du_inner'])                            # [N-2, ]
+                    du_list.append(solution['du_inner'])                            # [N-2, 2]
                     f_list.append(solution['f_inner'])                              # [N-2, ]
                     k_list.append(k_curr)                                           # [N, ]
                     a_list.append(A_inner)                                          # [N-2, N-2]

@@ -1,10 +1,15 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 import pickle
-import cartesian
+from src.utils import cartesian
 
+debug = False
 
 def load_pkl_file(dataset_path):
     if dataset_path.endswith('.pkl'):
@@ -28,19 +33,11 @@ def load_pkl_file(dataset_path):
     else:
         raise ValueError("Unsupported file format. Only .pkl files are supported.")
 
-def get_boundary2D(x):
-    # initial value problem
-    b_x0 = cartesian.product(np.array([x[0]]), x)
-    b_x1 = cartesian.product(np.array([x[-1]]), x)
-    b_y0 = cartesian.product(np.array(x[1:-1]), np.array([x[0]]))
-    b_y1 = cartesian.product(np.array(x[1:-1]), np.array([x[-1]]))
-    return np.concatenate((b_x0, b_x1, b_y0, b_y1), axis = 0)
-
 def generate_uniform_grid(num_points):
     x_uniform = np.linspace(0.0, 1.0, num_points)
     x_uniform = cartesian.power(x_uniform, dimension=2)
+    #print('x_uniform:', x_uniform.shape)
     return x_uniform
-
 
 def generate_power_law_grid(num_points, power=3.0):
     """
@@ -67,23 +64,31 @@ def generate_x_nodes(grid_type, num_points):
 
     if grid_type == 'uniform':
         return generate_uniform_grid(num_points)
-    #elif grid_type == 'power':
-    #    return generate_power_law_grid(num_points)
-    #elif grid_type == 'tanh':
-    #    return generate_tanh_clustered_grid(num_points)
+    elif grid_type == 'power':
+        raise NotImplementedError() 
+    elif grid_type == 'tanh':
+        raise NotImplementedError() 
     else:
         raise ValueError(f"Unknown grid type: {grid_type}")
 
+def get_boundary_inner_idx(x):
+    n = x.shape[0]
+    n_grid = int(np.sqrt(n))
+    bc_idx_x = np.concatenate((np.arange(0, n_grid), np.arange(n-n_grid, n)))
+    bc_idx_y = np.concatenate((np.arange(n_grid, n-n_grid, n_grid), 
+                               np.arange(2*n_grid-1, n - n_grid, n_grid)))
+    bc_idx = np.concatenate((bc_idx_x, bc_idx_y))
+    inner_idx = np.delete(np.arange(n), bc_idx)
+    return bc_idx, inner_idx
 
 def grf_generate(x_nodes, func_num, sigma, l0, mean=0.0, minimal=None, **kwargs):
     """
     Guassian Random Field
     """
     x_num  = x_nodes.shape[0]                          # (x_num,)
-    r_square = (x_nodes.reshape(x_num,1, x_nodes.shape[1]) - x_nodes.reshape(1,-1))**2    # (x_num, x_num, 2)
+    r_square = (x_nodes.reshape(x_num,1, x_nodes.shape[1]) - x_nodes.reshape(1,x_num,-1))**2    # (x_num, x_num, 2)
     r_square = np.sum(r_square, axis=2)                # (x_num, x_num)
     covariance_matrix = np.zeros((x_num, x_num))  # (x_num, x_num)
-
     target_num = func_num  # cache desired batch size
     sample_multiplier = 2 if minimal is not None else 1
 
@@ -96,7 +101,7 @@ def grf_generate(x_nodes, func_num, sigma, l0, mean=0.0, minimal=None, **kwargs)
         s = sigma[idx]
         covariance_matrix += (s ** 2) * np.exp(- r_square / (2 * l ** 2))               # (x_num, x_num)
 
-    mean = mean * np.ones_like(x_nodes)  # (x_num,)
+    mean = mean * np.ones(x_num)  # (x_num,)
 
     grfs_list = []
     collected = 0
@@ -110,6 +115,13 @@ def grf_generate(x_nodes, func_num, sigma, l0, mean=0.0, minimal=None, **kwargs)
 
         grfs_list.append(samples)
         collected += len(samples)
+    
+    """if debug:
+        grf_plot = grfs_list[0][0].reshape(int(np.sqrt(x_num)),int(np.sqrt(x_num)))
+        plt.imshow(grf_plot, cmap='jet')
+        plt.colorbar()
+        plt.show()
+        exit()"""
 
     grfs = np.vstack(grfs_list)[:target_num]
     return grfs
@@ -158,7 +170,6 @@ function_generators = {
 }
 
 if __name__ == "__main__":
-    x_nodes = generate_x_nodes("uniform", 10)
-    #x_nodes = x_nodes.reshape(10,10,2)
-    print(x_nodes[0,:])
-    print(x_nodes[:,0])
+    x = generate_x_nodes('uniform', 10)
+    x = x.reshape(10,10,2)
+    print(x[0,5], x[1,5])

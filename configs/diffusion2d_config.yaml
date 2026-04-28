@@ -2,7 +2,7 @@
 # 1. PDE problem configs
 # ============================
 problem:
-  type: diffusion                    # the problem type of PDE, "diffusion" or "convdiff"
+  type: diffusion2d                    # the problem type of PDE, "diffusion" or "convdiff"
   method: fdm                        # the numerical method to get training data, "fdm"
   n_dim: 2                           # the dimension of the input of PDEs
   output_dim: 1                      # the dimension of the solutions
@@ -14,13 +14,13 @@ problem:
 # 2.1 Data generation configs (Generate Training & Validation Data for Neural Operator)
 # =================================================================================
 data:                                # The setting of mesh in training data
-  func_num: 10000                    # the count of data in the overall dataset (including training and validating)
+  func_num: 10                    # the count of data in the overall dataset (including training and validating)
   train_ratio: 0.90                  # the ratio of training data over all data, remaining is the validating data
   threshold: 1.0                     # placeholder, meaningful only for Helmholtz equations
   redundancy: 1.0                    # placeholder, meaningful only for Helmholtz equations
 
   mesh:
-    grid_num: 31                     # the num of discrete uniform gird points for k(x), f(x), u(x)
+    grid_num: 20                     # the num of discrete uniform gird points for k(x), f(x), u(x)
     grid_type: uniform               # uniform grid: "uniform" & non-uniform grid: "power", "tanh"
 
   k_x:                               # The GRFs parameter for parameter function k(x)
@@ -57,7 +57,7 @@ testing:
   redundancy: 1.0                    # placeholder, meaningful only for Helmholtz equations
 
   mesh:
-    grid_num: 201                    # testing meshes differ from the training mesh such as [61, 241, 481]
+    grid_num: 31                    # testing meshes differ from the training mesh such as [61, 241, 481]
     grid_type: uniform               # default to the same as training; can be customized
   k_x:                               # keep the same generation setting as training by default
     generator: grf

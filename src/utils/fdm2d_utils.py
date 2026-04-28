@@ -2,9 +2,11 @@ import numpy as np
 import warnings
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
+import matplotlib.pyplot as plt
 
+debug = False
 
-def build_diffusion_matrix_2d(n_grid, h, x, k_x, mat_type="sparse"):
+def build_diffusion_matrix_2d(x, k_x, mat_type="sparse"):
     """
     Build the FDM matrix of a diffusion operator -d(d k(x) u(x)).
     The matrix includes boundary rows/cols.
@@ -25,23 +27,22 @@ def build_diffusion_matrix_2d(n_grid, h, x, k_x, mat_type="sparse"):
         A (n, n)
     """
     n = x.shape[0]
-    assert n == n_grid ** 2
+    n_grid = int(np.sqrt(n))
+    h = np.diff(x[1, :2])[0]
     x = np.asarray(x, dtype=float).reshape(n_grid, n_grid, 2)
     k_x = np.asarray(k_x, dtype=float).reshape(n_grid, n_grid)
 
-        # warnings.warn("convert k_x from (n,) to (n-1,)")
-
-    #if mat_type.lower() == "sparse":
-    #    Ap = sp.lil_matrix((n, n))  # (n, n)
-    #    Dx = sp.lil_matrix((n, n))  # (n, n)
-    #    Dy = sp.lil_matrix((n, n))  # (n, n)
-
-    Dx = np.zeros(shape=(n, n), dtype=float)  # (n, n)
-    Dy = np.zeros(shape=(n, n), dtype=float)  # (n, n)
+    if mat_type.lower() == "sparse":
+        #Ap = sp.lil_matrix((n, n))  # (n, n)
+        Dx = sp.lil_matrix((n, n))  # (n, n)
+        Dy = sp.lil_matrix((n, n))  # (n, n)
+    else:
+        Dx = np.zeros(shape=(n, n), dtype=float)  # (n, n)
+        Dy = np.zeros(shape=(n, n), dtype=float)  # (n, n)
 
         
     # build dy(k dy)[ ]
-    for i in range(0, n_grid):
+    for i in range(1, n_grid-1):
         y_cur = x[i, :, 1]
         k_cur = k_x[i, :]
         k_cur = 0.5 * (k_cur[:-1] + k_cur[1:])
@@ -52,7 +53,7 @@ def build_diffusion_matrix_2d(n_grid, h, x, k_x, mat_type="sparse"):
             Dy[q,q] = -Dy[q,q-1] - Dy[q,q+1]
 
     # build dx(k dx)[ ]
-    for j in range(0, n_grid):
+    for j in range(1, n_grid-1):
         x_cur = x[:, j, 0]
         k_cur = k_x[:, j]
         k_cur = 0.5 * (k_cur[:-1] + k_cur[1:])
@@ -64,103 +65,35 @@ def build_diffusion_matrix_2d(n_grid, h, x, k_x, mat_type="sparse"):
 
     Ap = Dx + Dy
 
-    return Ap
-
-
-def build_convection_matrix_1d(x, b_x, mat_type="sparse"):
-    """
-        Build the FDM matrix of a convection-diffusion operator b(x)·du(x).
-        The matrix includes boundary rows/cols.
-
-        using the upwind form, we have:
-        - if b(i)>0,  b(i)·du(x) =b[i] * (u[i] - u[i-1])/(x[i] - x[i-1])
-        - if b(i)<0,  b(i)·du(x) =b[i] * (u[i+1] - u[i])/(x[i+1] - x[i])
-
-        Args:
-            x: (n,)
-            b_x: (n,)
-            mat_type: "sparse" or "dense"
-
-        Returns:
-            A (n, n)
-    """
-    n = len(x)
-    if np.isscalar(b_x) or len(b_x) == 1:
-        b_x = np.ones(n) * b_x
-    elif n == len(b_x):
-        pass
-    else:
-        raise ValueError("b_x must be scalar, or have length len(x)")
-
-    if mat_type.lower() == "sparse":
-        Ap = sp.lil_matrix((n, n))
-    else:
-        Ap = np.zeros((n, n), dtype=float)
-
-    h = np.diff(x)
-    if np.allclose(h, h[0]):
-        h = h[0]
-        for i in range(1, n - 1):
-            if b_x[i] >= 0:
-                Ap[i, i] += b_x[i] / h
-                Ap[i, i - 1] += -b_x[i] / h
-            else:
-                Ap[i, i + 1] += b_x[i] / h
-                Ap[i, i] += -b_x[i] / h
-    else:
-        for i in range(1, n - 1):
-            if b_x[i] >= 0:
-                Ap[i, i] += b_x[i] / h[i - 1]
-                Ap[i, i - 1] += -b_x[i] / h[i - 1]
-            else:
-                Ap[i, i + 1] += b_x[i] / h[i]
-                Ap[i, i] += -b_x[i] / h[i]
+    """if debug:
+        print('1/h^2', 1/(h**2))
+        Ap_plot = Ap
+        if mat_type.lower() == "sparse":
+            Ap_plot = np.asarray(Ap.todense()) 
+        plt.imshow(np.abs(Ap_plot), cmap='jet')
+        plt.colorbar()
+        plt.show()
+        exit()"""
 
     return Ap
 
 
-def build_reaction_matrix_1d(x, k_x, mat_type="sparse"):
-    """
-    build the diagonal matrix for zero-order term k(x)^2 u(x)
-    Args:
-        x:
-        k_x:
-        mat_type:
-
-    Returns:
-
-    """
-    n = len(x)
-    if np.isscalar(k_x) or len(k_x) == 1:
-        k_x = np.ones(n) * k_x
-    elif n == len(k_x):
-        pass
-    else:
-        raise ValueError("k_x must be scalar, or have length len(x)")
-
-    if mat_type.lower() == "sparse":
-        Ap = sp.diags(np.power(k_x, 2), offsets=0, shape=(n, n), format="lil")
-    else:
-        Ap = np.diag(np.power(k_x, 2))
-    return Ap
-
-
-def numerical_derivative_1d(u, x):
+def numerical_derivative_2d(u, x):
     """
     use central differences to compute du/dx。
     Args:
-        u: [n,] or [batch, n]
-        x: [n,]
+        u: [n] 
+        x: [n,2]
     """
-    if u.ndim == 2:
-        return np.stack([np.gradient(row, x) for row in u], axis=0)
-    elif u.ndim == 1:
-        return np.gradient(u, x)
-    else:
-        raise ValueError("Unsupported dimension for numerical_derivative_1d")
+    n_grid = int(np.sqrt(u.shape[0]))
+    u = u.reshape(n_grid, n_grid)
+    h = np.diff(x[1, :2])[0]
+    result = np.gradient(u, h)
+    result = np.hstack((result[0].reshape(-1,1), result[1].reshape(-1,1)))
+    return result  
 
 
-def solve_dirichlet_system_1d(A, f, u_left=0.0, u_right=0.0, mat_type="sparse"):
+def solve_dirichlet_system_2d(A, f, bc_idx, inner_idx, u_bc=0.0, mat_type="sparse"):
     """
     solve the system use dense solver or sparse solver
     1. Apply the boundary conditions
@@ -170,12 +103,12 @@ def solve_dirichlet_system_1d(A, f, u_left=0.0, u_right=0.0, mat_type="sparse"):
     mat_type = mat_type.lower()
 
     # apply the boundary condition
-    A_ii, f_inner, inner, bc_idx = apply_dirichlet_bc_1d(A, f, u_left, u_right, mat_type)
+    A_ii, f_inner= apply_dirichlet_bc_2d(A, f, bc_idx, inner_idx, u_bc, mat_type)
 
     # direct solving
     u_inner = direct_solve(A_ii, f_inner, mat_type)
 
-    return u_inner, A_ii, f_inner, inner, bc_idx
+    return u_inner, A_ii, f_inner
 
 
 def direct_solve(A, b, mat_type="sparse"):
@@ -194,7 +127,7 @@ def direct_solve(A, b, mat_type="sparse"):
         return np.linalg.solve(A, b)
 
 
-def apply_dirichlet_bc_1d(A, f, u_left=0.0, u_right=0.0, mat_type="sparse"):
+def apply_dirichlet_bc_2d(A, f, bc_idx, inner_idx, u_bc=0.0, mat_type="sparse"):
     """
     Applying dirichlet boundary conditions on the matrix A and the right-hand side f
     with u(0) = u_left, u(1) = u_right
@@ -214,33 +147,33 @@ def apply_dirichlet_bc_1d(A, f, u_left=0.0, u_right=0.0, mat_type="sparse"):
     Returns:
 
     """
-    n = A.shape[0]
-    inner = slice(1, -1)
-    bc_idx = (0, n-1)
-
     f = f.copy()
     A_bc = A.copy()
-    u_bc = np.asarray([u_left, u_right], dtype=float)
+
+    if type(u_bc) == float:
+        u_bc = u_bc * np.ones(len(bc_idx))
+    else:
+        assert len(u_bc) == len(bc_idx)
+        u_bc = np.asarray(u_bc, dtype=float)
 
     if mat_type.lower() == "sparse":
         A_csr = A_bc.tocsr()
-        A_ii = A_csr[inner, inner]   # matrix of inner points
-        A_ib = A_csr[inner, bc_idx]  # matrix of inner points and boundary points
+        A_ii = A_csr[inner_idx.reshape(-1, 1), inner_idx.reshape(1, -1)]   # matrix of inner points
+        A_ib = A_csr[inner_idx.reshape(-1, 1), bc_idx.reshape(1, -1)]  # matrix of inner points and boundary points
     else:
-        A_ii = A_bc[inner, inner]  # matrix of inner points
-        A_ib = A_bc[inner, bc_idx]  # matrix of inner points and boundary points
+        A_ii = A_bc[inner_idx.reshape(-1,1), inner_idx.reshape(1,-1)]  # matrix of inner points
+        A_ib = A_bc[inner_idx.reshape(-1,1), bc_idx.reshape(1,-1)]  # matrix of inner points and boundary points
 
     # f = A_ii u_ii + A_ib u_bc
-    f_inner = f[inner] - A_ib @ u_bc
+    f_inner = f[inner_idx] - A_ib @ u_bc
 
-    return A_ii, f_inner, inner, bc_idx
+    return A_ii, f_inner
 
 
-def expand_solution(u_inner, u_left=0.0, u_right=0.0):
-    n = len(u_inner) + 2
+def expand_solution(u_inner, u_bc, inner_idx, bc_idx):
+    n = len(inner_idx) + len(bc_idx) 
     u_expand = np.zeros(n)
 
-    u_expand[1:-1] = u_inner
-    u_expand[0], u_expand[-1] = u_left, u_right
+    u_expand[inner_idx] = u_inner
+    u_expand[bc_idx] = u_bc
     return u_expand
-

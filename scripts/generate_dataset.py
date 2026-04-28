@@ -1,7 +1,10 @@
-from src.utils.cfg_util import load_config
-from src.data_generation.generator1d import DataGenerator1d, TestDataGenerator
+import os
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# config = load_config("diffusion1d*")
-config = load_config("helmholtz1d*")
-# DataGenerator1d(config).save(True)
+from src.utils.cfg_util import load_config
+from src.data_generation.generator2d import DataGenerator2d, TestDataGenerator
+
+config = load_config("diffusion2d*")
+DataGenerator2d(config).save(True)
 TestDataGenerator(config).save(True)

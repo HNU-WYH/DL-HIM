@@ -1,6 +1,6 @@
 import numpy as np
 from warnings import warn
-from src.utils.fdm_utils import *
+from src.utils.fdm2d_utils import *
 
 
 class Diffusion2D:
@@ -11,7 +11,7 @@ class Diffusion2D:
         u(0) = u(1) = 0
     """
 
-    def __init__(self, x_nodes, k_x, f_x, mat_type="sparse", **kwargs):
+    def __init__(self, x_nodes, bc_idx, inner_idx, k_x, f_x, mat_type="sparse", **kwargs):
         """
         Args:
             x_nodes: uniform grid in [0,1]^2  shape: (n,2)
@@ -22,22 +22,21 @@ class Diffusion2D:
         self.x = np.asarray(x_nodes, dtype=float)
         self.f = np.asarray(f_x, dtype=float)
         self.mat_type = mat_type.lower()
+        self.k = np.asarray(k_x, dtype=float)
+        self.bc_idx = bc_idx
+        self.inner_idx = inner_idx
 
-        if np.isscalar(k_x) or len(k_x) == 1:
-            self.k = np.ones_like(x_nodes) * k_x
-        else:
-            self.k = np.asarray(k_x, dtype=float)
-
-        assert self.x.shape == self.f.shape == self.k.shape
+        assert self.x.shape[0] == self.f.shape[0] == self.k.shape[0]
+        assert len(self.bc_idx) + len(self.inner_idx)== self.x.shape[0]
 
         # Compute the global matrix A_global
-        self.A_global = build_diffusion_matrix_1d(self.x, self.k, mat_type=self.mat_type)
+        self.A_global = build_diffusion_matrix_2d(self.x, self.k, mat_type=self.mat_type)
 
         # Initialize variables
-        self.A_ii, self.u_left, self.u_right = None, None, None
+        self.A_ii, self.u_bc = None, None
         self.f_inner, self.u_inner, self.du_dx = None, None, None
 
-    def build_system(self, u_left=0.0, u_right=0.0, method="fdm"):
+    def build_system(self, u_bc=0.0, method="fdm"):
         """
             -d [k(x) du(x)] = f(x)
         """
@@ -45,43 +44,48 @@ class Diffusion2D:
             raise NotImplementedError(f"{method} has not been implemented yet")
 
         # Apply dirichlet B.C.
-        self.A_ii, self.f_inner, inner, bc_idx = apply_dirichlet_bc_1d(
-            A=self.A_global, f=self.f, u_left=u_left, u_right=u_right, mat_type=self.mat_type
+        self.A_ii, self.f_inner = apply_dirichlet_bc_2d(
+            A=self.A_global, f=self.f, bc_idx=self.bc_idx, inner_idx=self.inner_idx, 
+            u_bc=u_bc, mat_type=self.mat_type
         )
 
         # Restoring the boundary conditions
-        self.u_left, self.u_right = u_left, u_right
+        self.u_bc = u_bc
 
-        return self.A_ii, self.f_inner, inner, bc_idx
+        return self.A_ii, self.f_inner, self.inner_idx, self.bc_idx
 
-    def solve(self, u_left=0.0, u_right=0.0, method="fdm"):
+    def solve(self, u_bc=0.0, method="fdm"):
         """
             -d [k(x) du(x)] = f(x)
         """
         if method.lower() != 'fdm':
             raise NotImplementedError(f"{method} has not been implemented yet")
 
-        if (self.A_ii is not None) and (u_left == self.u_left) and (u_right == self.u_right):
+        if (self.A_ii is not None) and np.all(u_bc == self.u_bc):
             # solver the inner system directly
             self.u_inner = direct_solve(self.A_ii, self.f_inner, mat_type=self.mat_type)
-            inner = slice(1, -1)
 
         else:
             # solve the system with dirichlet b.c.
-            self.u_inner, self.A_ii, self.f_inner, inner, bc_idx = solve_dirichlet_system_1d(
-                self.A_global, self.f, u_left=u_left, u_right=u_right, mat_type=self.mat_type
+            self.u_inner, self.A_ii, self.f_inner  = solve_dirichlet_system_2d(
+                self.A_global, self.f, bc_idx = self.bc_idx, inner_idx = self.inner_idx,
+                u_bc = u_bc, mat_type=self.mat_type
             )
 
             # Restoring the boundary conditions
-            self.u_left, self.u_right = u_left, u_right
+            self.u_bc = u_bc 
 
         # compute the derivative
-        self.du_dx = numerical_derivative_1d(expand_solution(self.u_inner, u_left, u_right), self.x)[inner]
+        self.du_dx = numerical_derivative_2d(
+            expand_solution(
+                self.u_inner, u_bc, self.inner_idx, self.bc_idx
+            ), 
+            self.x)[self.inner_idx, :]
 
         return {"u_inner":  self.u_inner,           # (n-2,)
                 "du_inner": self.du_dx,             # (n-2)
                 "A_inner":  self.A_ii,              # (n-2, n-2)
                 "f_inner":  self.f_inner,           # (n-2,)
                 "k_x":      self.k,                 # (n,)
-                "x_inner":  self.x[inner],          # (n-2)
+                "x_inner":  self.x[self.inner_idx],          # (n-2)
                 }
