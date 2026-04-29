@@ -2,16 +2,25 @@ Dynamic training does not change the inference architecture, so its inference sp
 Its overhead is therefore concentrated in the training phase, where temporal unrolling increases both wall-clock time and memory usage.
 Since this behavior is expected and not central to our main contribution, we report it only as a compact ratio-based cost comparison.
 
-\begin{table}[t]
-\centering
-\caption{Relative computational cost of dynamic training versus static training.}
-\label{tab:dynamic_static_cost}
-\begin{tabular}{lccc}
-\toprule
-Model & Inf. & Time & Mem. \\
-\midrule
-FNS & $1.46\times$ & $5.96\times$ & $8.53\times$ \\
-DeepONet & $1.17\times$ & $9.89\times$ & $1.61\times$ \\
-\bottomrule
-\end{tabular}
-\end{table}
+\begin{table}[htbp]
+      \centering
+      \caption{Cost-Efficiency Comparison: Dynamic (K=10) vs.\ Static Training.
+               Inference cost (Inf.) is the per-iteration wall-clock overhead;
+               Time and Mem.\ are training-phase overheads relative to static training.}
+      \label{tab:cost_efficiency}
+      \begin{tabular}{llcc}
+          \toprule
+          \textbf{Solver} & \textbf{Metric} & \textbf{Static} & \textbf{Dynamic} \\
+          \midrule
+          \multirow{3}{*}{HINTS}
+            & Inference cost & $1.00\times$ & $1.17\times$ \\
+            & Training time  & $1.00\times$ & $9.89\times$ \\
+            & Peak memory    & $1.00\times$ & $1.61\times$ \\
+          \midrule
+          \multirow{3}{*}{FNS}
+            & Inference cost & $1.00\times$ & $1.46\times$ \\
+            & Training time  & $1.00\times$ & $5.96\times$ \\
+            & Peak memory    & $1.00\times$ & $8.53\times$ \\
+          \bottomrule
+      \end{tabular}
+  \end{table}

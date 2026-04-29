@@ -4,6 +4,12 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 import pickle
 
+# =============================================================================
+# 1-D Generation Utilities
+# This file is intentionally restricted to 1D grids and 1D random/function
+# generators. 2D generators should live in src/utils/gen2d_util.py.
+# =============================================================================
+
 
 def load_pkl_file(dataset_path):
     if dataset_path.endswith('.pkl'):
@@ -28,12 +34,12 @@ def load_pkl_file(dataset_path):
         raise ValueError("Unsupported file format. Only .pkl files are supported.")
 
 
-def generate_uniform_grid(num_points):
+def generate_uniform_grid_1d(num_points):
     x_uniform = np.linspace(0.0, 1.0, num_points)
     return x_uniform
 
 
-def generate_power_law_grid(num_points, power=3.0):
+def generate_power_law_grid_1d(num_points, power=3.0):
     """
     Generate Non-uniform Grid on [0, 1]。
     """
@@ -42,7 +48,7 @@ def generate_power_law_grid(num_points, power=3.0):
     return x_non_uniform
 
 
-def generate_tanh_clustered_grid(num_points, strength=3.2):
+def generate_tanh_clustered_grid_1d(num_points, strength=3.2):
     """
     Generate Non-uniform Grid on [0, 1]。
     """
@@ -53,20 +59,20 @@ def generate_tanh_clustered_grid(num_points, strength=3.2):
     return x_normalized
 
 
-def generate_x_nodes(grid_type, num_points):
+def generate_x_nodes_1d(grid_type, num_points):
     grid_type = grid_type.lower()
 
     if grid_type == 'uniform':
-        return generate_uniform_grid(num_points)
+        return generate_uniform_grid_1d(num_points)
     elif grid_type == 'power':
-        return generate_power_law_grid(num_points)
+        return generate_power_law_grid_1d(num_points)
     elif grid_type == 'tanh':
-        return generate_tanh_clustered_grid(num_points)
+        return generate_tanh_clustered_grid_1d(num_points)
     else:
         raise ValueError(f"Unknown grid type: {grid_type}")
 
 
-def grf_generate(x_nodes, func_num, sigma, l0, mean=0.0, minimal=None, **kwargs):
+def grf_generate_1d(x_nodes, func_num, sigma, l0, mean=0.0, minimal=None, **kwargs):
     """
     Guassian Random Field
     """
@@ -105,7 +111,7 @@ def grf_generate(x_nodes, func_num, sigma, l0, mean=0.0, minimal=None, **kwargs)
     return grfs
 
 
-def fourier_generate(x_nodes, func_num, freq_num=3, freq_upper=10, amplitude=0.5, **kwargs):
+def fourier_generate_1d(x_nodes, func_num, freq_num=3, freq_upper=10, amplitude=0.5, **kwargs):
     """
     Fourier basis Overlapping
     """
@@ -123,7 +129,7 @@ def fourier_generate(x_nodes, func_num, freq_num=3, freq_upper=10, amplitude=0.5
     return np.array(func)                                     # (func_num, x_len)
 
 
-def gaussian_generate(x_nodes, func_num, **kwargs):
+def gaussian_generate_1d(x_nodes, func_num, **kwargs):
     """
     f ~ N(0, 1)
     """
@@ -133,16 +139,16 @@ def gaussian_generate(x_nodes, func_num, **kwargs):
     return f_x
 
 
-def fixed_generate(x_nodes, func_num, value=1.0, **kwargs):
+def fixed_generate_1d(x_nodes, func_num, value=1.0, **kwargs):
     x_num = len(x_nodes)
     f_x = np.ones(shape=(func_num, x_num))
     f_x = value * f_x
     return f_x
 
 
-function_generators = {
-    "fixed": fixed_generate,
-    "fourier": fourier_generate,
-    "grf": grf_generate,
-    "gaussian": gaussian_generate
+function_generators_1d = {
+    "fixed": fixed_generate_1d,
+    "fourier": fourier_generate_1d,
+    "grf": grf_generate_1d,
+    "gaussian": gaussian_generate_1d
 }

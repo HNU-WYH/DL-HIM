@@ -1,91 +1,80 @@
 import numpy as np
-from warnings import warn
-from src.utils.fdm2d_utils import *
+
+from src.utils.fdm_utils import (
+    build_diffusion_matrix_2d,
+    apply_dirichlet_bc_2d,
+    solve_dirichlet_system_2d,
+)
 
 
 class Diffusion2D:
     """
-    Solve the diffusion equation
-        -d [k(x) du(x)] = f(x) in [0,1]
-    with homogeneous boundary conditions:
-        u(0) = u(1) = 0
+    Solve the 2D diffusion equation
+        -∇·(k(x,y) ∇u) = f(x,y)  in [0,1]×[0,1]
+    with homogeneous Dirichlet boundary conditions on all four sides.
     """
 
-    def __init__(self, x_nodes, bc_idx, inner_idx, k_x, f_x, mat_type="sparse", **kwargs):
+    def __init__(self, x_nodes, y_nodes, k_xy, f_xy, mat_type="sparse", **kwargs):
         """
         Args:
-            x_nodes: uniform grid in [0,1]^2  shape: (n,2)
-            k_x: parameter function                       shape: (n,)
-            f_x: rhs function                             shape: (n,)
+            x_nodes: (Nx,)
+            y_nodes: (Ny,)
+            k_xy:    (Nx, Ny)
+            f_xy:    (Nx, Ny)
             mat_type: "sparse" or "dense"
         """
         self.x = np.asarray(x_nodes, dtype=float)
-        self.f = np.asarray(f_x, dtype=float)
+        self.y = np.asarray(y_nodes, dtype=float)
+        self.k = np.asarray(k_xy, dtype=float)
+        self.f = np.asarray(f_xy, dtype=float)
         self.mat_type = mat_type.lower()
-        self.k = np.asarray(k_x, dtype=float)
-        self.bc_idx = bc_idx
-        self.inner_idx = inner_idx
 
-        assert self.x.shape[0] == self.f.shape[0] == self.k.shape[0]
-        assert len(self.bc_idx) + len(self.inner_idx)== self.x.shape[0]
+        assert self.k.shape == self.f.shape == (len(self.x), len(self.y))
 
-        # Compute the global matrix A_global
-        self.A_global = build_diffusion_matrix_2d(self.x, self.k, mat_type=self.mat_type)
+        self.Nx, self.Ny = len(self.x), len(self.y)
+        self.A_global = build_diffusion_matrix_2d(self.x, self.y, self.k, mat_type=self.mat_type)
 
-        # Initialize variables
-        self.A_ii, self.u_bc = None, None
-        self.f_inner, self.u_inner, self.du_dx = None, None, None
+        self.A_ii = None
+        self.f_inner = None
+        self.u_inner = None
 
-    def build_system(self, u_bc=0.0, method="fdm"):
+    def build_system(self, u_left=0.0, u_right=0.0, method="fdm"):
         """
-            -d [k(x) du(x)] = f(x)
+        Apply Dirichlet BC and return the interior system.
+        (u_left/u_right are placeholders for interface compatibility; 2D uses zero on all sides.)
         """
-        if method.lower() != 'fdm':
+        if method.lower() != "fdm":
             raise NotImplementedError(f"{method} has not been implemented yet")
 
-        # Apply dirichlet B.C.
-        self.A_ii, self.f_inner = apply_dirichlet_bc_2d(
-            A=self.A_global, f=self.f, bc_idx=self.bc_idx, inner_idx=self.inner_idx, 
-            u_bc=u_bc, mat_type=self.mat_type
+        self.A_ii, self.f_inner, inner_idx, bc_idx = apply_dirichlet_bc_2d(
+            self.A_global, self.f.ravel(), mat_type=self.mat_type, shape=(self.Nx, self.Ny)
+        )
+        return self.A_ii, self.f_inner, inner_idx, bc_idx
+
+    def solve(self, u_left=0.0, u_right=0.0, method="fdm"):
+        """
+        Solve the 2D diffusion system.
+
+        Returns:
+            dict with keys:
+                u_inner:  (Mx, My)        interior solution
+                A_inner:  sparse matrix   (Mx*My, Mx*My)
+                f_inner:  (Mx*My,)        interior RHS
+                k_x:      (Nx, Ny)        diffusion coefficient
+        """
+        if method.lower() != "fdm":
+            raise NotImplementedError(f"{method} has not been implemented yet")
+
+        self.u_inner, self.A_ii, self.f_inner, inner_idx, bc_idx = solve_dirichlet_system_2d(
+            self.A_global, self.f.ravel(), mat_type=self.mat_type, shape=(self.Nx, self.Ny)
         )
 
-        # Restoring the boundary conditions
-        self.u_bc = u_bc
+        Mx, My = self.Nx - 2, self.Ny - 2
+        u_inner_2d = self.u_inner.reshape(Mx, My)
 
-        return self.A_ii, self.f_inner, self.inner_idx, self.bc_idx
-
-    def solve(self, u_bc=0.0, method="fdm"):
-        """
-            -d [k(x) du(x)] = f(x)
-        """
-        if method.lower() != 'fdm':
-            raise NotImplementedError(f"{method} has not been implemented yet")
-
-        if (self.A_ii is not None) and np.all(u_bc == self.u_bc):
-            # solver the inner system directly
-            self.u_inner = direct_solve(self.A_ii, self.f_inner, mat_type=self.mat_type)
-
-        else:
-            # solve the system with dirichlet b.c.
-            self.u_inner, self.A_ii, self.f_inner  = solve_dirichlet_system_2d(
-                self.A_global, self.f, bc_idx = self.bc_idx, inner_idx = self.inner_idx,
-                u_bc = u_bc, mat_type=self.mat_type
-            )
-
-            # Restoring the boundary conditions
-            self.u_bc = u_bc 
-
-        # compute the derivative
-        self.du_dx = numerical_derivative_2d(
-            expand_solution(
-                self.u_inner, u_bc, self.inner_idx, self.bc_idx
-            ), 
-            self.x)[self.inner_idx, :]
-
-        return {"u_inner":  self.u_inner,           # (n-2,)
-                "du_inner": self.du_dx,             # (n-2)
-                "A_inner":  self.A_ii,              # (n-2, n-2)
-                "f_inner":  self.f_inner,           # (n-2,)
-                "k_x":      self.k,                 # (n,)
-                "x_inner":  self.x[self.inner_idx],          # (n-2)
-                }
+        return {
+            "u_inner": u_inner_2d,
+            "A_inner": self.A_ii,
+            "f_inner": self.f_inner,
+            "k_x": self.k,
+        }

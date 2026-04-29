@@ -242,3 +242,137 @@ def expand_solution(u_inner, u_left=0.0, u_right=0.0):
     u_expand[0], u_expand[-1] = u_left, u_right
     return u_expand
 
+
+# =============================================================================
+# 2-D FDM Utilities
+# =============================================================================
+
+def build_diffusion_matrix_2d(x, y, k_xy, mat_type="sparse"):
+    """
+    Build the FDM matrix for 2D diffusion operator -∇·(k ∇u).
+    Uses 5-point stencil. Boundary rows/cols are left as zeros.
+
+    Node ordering: row-major, idx = i * Ny + j.
+
+    Args:
+        x: (Nx,)
+        y: (Ny,)
+        k_xy: (Nx, Ny)
+        mat_type: "sparse" or "dense"
+
+    Returns:
+        A: (Nx*Ny, Nx*Ny)
+    """
+    Nx, Ny = len(x), len(y)
+    N = Nx * Ny
+    dx = np.diff(x)
+    dy = np.diff(y)
+    dx_uniform = np.allclose(dx, dx[0])
+    dy_uniform = np.allclose(dy, dy[0])
+    hx = dx[0] if dx_uniform else dx
+    hy = dy[0] if dy_uniform else dy
+
+    k = np.asarray(k_xy)
+    if k.shape != (Nx, Ny):
+        raise ValueError(f"k_xy shape {k.shape} does not match grid ({Nx}, {Ny})")
+
+    # Half-point k values
+    k_ip = 0.5 * (k[:-1, :] + k[1:, :])   # (Nx-1, Ny), x-direction interfaces
+    k_jp = 0.5 * (k[:, :-1] + k[:, 1:])   # (Nx, Ny-1), y-direction interfaces
+
+    if mat_type.lower() == "sparse":
+        A = sp.lil_matrix((N, N))
+    else:
+        A = np.zeros((N, N))
+
+    for i in range(1, Nx - 1):
+        for j in range(1, Ny - 1):
+            idx = i * Ny + j
+            if dx_uniform and dy_uniform:
+                cx_p = k_ip[i, j] / (hx ** 2)
+                cx_m = k_ip[i - 1, j] / (hx ** 2)
+                cy_p = k_jp[i, j] / (hy ** 2)
+                cy_m = k_jp[i, j - 1] / (hy ** 2)
+            else:
+                hx_mean = 0.5 * (hx[i - 1] + hx[i])
+                hy_mean = 0.5 * (hy[j - 1] + hy[j])
+                cx_p = k_ip[i, j] / (hx_mean * hx[i])
+                cx_m = k_ip[i - 1, j] / (hx_mean * hx[i - 1])
+                cy_p = k_jp[i, j] / (hy_mean * hy[j])
+                cy_m = k_jp[i, j - 1] / (hy_mean * hy[j - 1])
+
+            A[idx, idx] = cx_p + cx_m + cy_p + cy_m
+            A[idx, (i + 1) * Ny + j] = -cx_p
+            A[idx, (i - 1) * Ny + j] = -cx_m
+            A[idx, i * Ny + (j + 1)] = -cy_p
+            A[idx, i * Ny + (j - 1)] = -cy_m
+
+    return A
+
+
+def apply_dirichlet_bc_2d(A, f, mat_type="sparse", shape=None):
+    """
+    Apply homogeneous Dirichlet BC on all four sides.
+
+    Args:
+        A: (Nx*Ny, Nx*Ny)
+        f: (Nx*Ny,)
+        mat_type: "sparse" or "dense"
+        shape: (Nx, Ny). If None, will try to infer from sqrt(N).
+
+    Returns:
+        A_ii, f_inner, inner_idx, bc_idx
+    """
+    N = A.shape[0]
+    if shape is None:
+        Ny = int(round(np.sqrt(N)))
+        Nx = N // Ny
+        if Nx * Ny != N:
+            raise ValueError("Cannot infer 2D grid shape from flat length. Please pass shape=(Nx, Ny).")
+    else:
+        Nx, Ny = shape
+
+    f = np.asarray(f).copy()
+    inner_idx = [i * Ny + j for i in range(1, Nx - 1) for j in range(1, Ny - 1)]
+    bc_idx = [idx for idx in range(N) if idx not in inner_idx]
+
+    if mat_type.lower() == "sparse":
+        A_csr = A.tocsr()
+        A_ii = A_csr[inner_idx, :][:, inner_idx]
+        A_ib = A_csr[inner_idx, :][:, bc_idx]
+    else:
+        A_ii = A[np.ix_(inner_idx, inner_idx)]
+        A_ib = A[np.ix_(inner_idx, bc_idx)]
+
+    # Homogeneous BC: u_bc = 0  =>  f_inner = f[inner] - A_ib @ 0 = f[inner]
+    f_inner = f[inner_idx]
+    return A_ii, f_inner, inner_idx, bc_idx
+
+
+def solve_dirichlet_system_2d(A, f, mat_type="sparse", shape=None):
+    """
+    Convenience wrapper: build + apply_bc + direct_solve.
+    """
+    A_ii, f_inner, inner_idx, bc_idx = apply_dirichlet_bc_2d(A, f, mat_type=mat_type, shape=shape)
+    u_inner = direct_solve(A_ii, f_inner, mat_type=mat_type)
+    return u_inner, A_ii, f_inner, inner_idx, bc_idx
+
+
+def expand_solution_2d(u_inner, Nx, Ny):
+    """
+    Expand interior solution back to full (Nx, Ny) grid with zero boundaries.
+
+    Args:
+        u_inner: ((Nx-2)*(Ny-2),) or (Nx-2, Ny-2)
+        Nx, Ny: full grid sizes
+
+    Returns:
+        u_expand: (Nx, Ny)
+    """
+    u_expand = np.zeros((Nx, Ny))
+    u_arr = np.asarray(u_inner)
+    if u_arr.ndim == 1:
+        u_arr = u_arr.reshape(Nx - 2, Ny - 2)
+    u_expand[1:-1, 1:-1] = u_arr
+    return u_expand
+

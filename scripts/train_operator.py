@@ -95,11 +95,15 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
     ckpt_base = ckpt_dir(cfg)
     os.makedirs(ckpt_base, exist_ok=True)
 
-    # checkpoint filename prefix: e.g. "diffusion_1D_Grid31"
+    # checkpoint filename prefix: e.g. "diffusion_1D_Grid31" or "diffusion2d_2D_Grid31x31"
     problem = cfg.problem.type.lower()
     n_dim = cfg.problem.n_dim
-    grid_num = cfg.data.mesh.grid_num
-    ckpt_name = f"{problem}_{n_dim}D_Grid{grid_num}"
+    mesh_cfg = cfg.data.mesh
+    if n_dim == 1:
+        grid_label = mesh_cfg.grid_num
+    else:
+        grid_label = f"{mesh_cfg.grid_nx}x{mesh_cfg.grid_ny}"
+    ckpt_name = f"{problem}_{n_dim}D_Grid{grid_label}"
 
     model = create_no(cfg)
     trainer = select_trainer(model, trainer_type, save_path=ckpt_base,

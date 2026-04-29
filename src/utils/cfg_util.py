@@ -101,6 +101,13 @@ def load_config(config_wildcard: str = "diffusion1d*",
     # add the device information
     config['device'] = "cuda" if torch.cuda.is_available() else "cpu"
 
+    # grid label for path naming
+    mesh_cfg = config.data.mesh
+    if config.problem.n_dim == 1:
+        grid_label = str(mesh_cfg.grid_num)
+    else:
+        grid_label = f"{mesh_cfg.grid_nx}x{mesh_cfg.grid_ny}"
+
     # add the path of model to be loaded
     if model_load_name is not None:
         config["model_load_path"] = find_available_model(os.path.join(dir_root, "checkpoints", model_load_name))
@@ -108,7 +115,7 @@ def load_config(config_wildcard: str = "diffusion1d*",
         config["model_load_path"] = find_available_model(os.path.join(dir_root, "checkpoints", "baseline",
                                                                       config.problem.type + "_" +
                                                                       str(config.problem.n_dim) + "D_Grid" +
-                                                                      str(config.data.mesh.grid_num) + "_Ep" +
+                                                                      grid_label + "_Ep" +
                                                                       str(config.training.num_epoch) + "*"))
     if model_save_name is not None:
         config["model_save_path"] = os.path.join(dir_root, "checkpoints", model_save_name)
@@ -116,7 +123,7 @@ def load_config(config_wildcard: str = "diffusion1d*",
         config["model_save_path"] = os.path.join(dir_root, "checkpoints", "uncategorized",
                                                  config.problem.type + "_" +
                                                  str(config.problem.n_dim) + "D_Grid" +
-                                                 str(config.data.mesh.grid_num) + "_Ep" +
+                                                 grid_label + "_Ep" +
                                                  str(config.training.num_epoch) + "_" +
                                                  str(datetime.now())[:10])
 
@@ -127,7 +134,7 @@ def load_config(config_wildcard: str = "diffusion1d*",
         config["dataset_path"] = os.path.join(dir_root, "dataset",
                                               config.problem.type + "_" +
                                               str(config.problem.n_dim) + "D_Grid" +
-                                              str(config.data.mesh.grid_num) + ".npz")
+                                              grid_label + ".npz")
 
     config = ensure_list_in_field(config)
     return config

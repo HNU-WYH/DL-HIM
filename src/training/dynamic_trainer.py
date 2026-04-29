@@ -88,6 +88,8 @@ class DynamicTrainer:
         )
 
     def load_dataset(self, dataset):
+        if dataset["u_data_train"].ndim > 2:
+            raise NotImplementedError("DynamicTrainer does not support 2D problems. Use StaticTrainer instead.")
         # load coordinates of x
         self.x_nodes = torch.tensor(dataset["x_data"], dtype=torch.float32, device=self.device)
 

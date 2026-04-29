@@ -11,7 +11,7 @@ from src.problems.convdiff1d import ConvectionDiffusion1D
 Problems = {
     "poisson":      Diffusion1D,
     "diffusion":    Diffusion1D,
-    "diffusion2d":    Diffusion2D,
+    "diffusion2d":  Diffusion2D,
     "helmholtz":    Helmholtz1D,
     "convdiff":     ConvectionDiffusion1D,
 }
