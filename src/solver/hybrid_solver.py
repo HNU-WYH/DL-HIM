@@ -9,7 +9,8 @@ from tqdm import tqdm
 from typing import Optional
 
 from src.problems import create_problem
-from src.utils.gen1d_util import generate_x_nodes, generate_xy_nodes
+from src.utils.gen1d_util import generate_x_nodes_1d
+from src.utils.gen2d_util import generate_xy_nodes
 from src.neural_operator import NeuralOperatorBase, create_no
 from src.utils.stepin_utils import AndersonAcceleration, adaptive_step_size_cg
 
@@ -35,7 +36,7 @@ class HybridSolver:
 
         if self.n_dim == 1:
             self.don_x_nodes = np.asarray(don_x_nodes) if don_x_nodes is not None \
-                else generate_x_nodes(cfg.data.mesh.grid_type, cfg.data.mesh.grid_num)
+                else generate_x_nodes_1d(cfg.data.mesh.grid_type, cfg.data.mesh.grid_num)
             self.prob_x_nodes = np.asarray(prob_x_nodes) if prob_x_nodes is not None \
                 else np.linspace(0, 1, k_x.shape[-1])
             self.don_y_nodes = None
@@ -97,7 +98,7 @@ class HybridSolver:
 
     def _assemble_system(self) -> None:
 
-        problem_cls = create_problem(self.config.problem.type)
+        problem_cls = create_problem(self.config.problem.type, self.n_dim)
         if self.n_dim == 1:
             self.problem = problem_cls(
                 x_nodes=self.prob_x_nodes,

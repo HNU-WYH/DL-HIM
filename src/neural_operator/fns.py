@@ -2,11 +2,11 @@ import numpy as np
 import torch
 
 from box import Box
-from torch import nn
 import torch.nn.functional as F
 from .base import NeuralOperatorBase
 
-from src.utils.gen1d_util import generate_x_nodes
+from src.utils.gen1d_util import generate_x_nodes_1d
+from src.utils.gen2d_util import generate_xy_nodes
 from src.utils.fns_blocks import MetaT1D, UNet1D, FNOMetaLambda1D, MetaT2D, FNOMetaLambda2D
 
 
@@ -35,7 +35,7 @@ class FNS1d(NeuralOperatorBase):
         # Grid Properties
         # The resolution of meta-λ in FNS is fixed
         self.fns_num_x_nodes = config.data.mesh.grid_num
-        self.fns_x_nodes_np = generate_x_nodes(grid_type=config.data.mesh.grid_type, num_points=self.fns_num_x_nodes)
+        self.fns_x_nodes_np = generate_x_nodes_1d(grid_type=config.data.mesh.grid_type, num_points=self.fns_num_x_nodes)
         self.register_buffer("fns_x_nodes_torch",
                              torch.tensor(self.fns_x_nodes_np[1:-1, None], dtype=torch.float32, device=self.device))
 
@@ -324,14 +324,13 @@ class FNS2d(NeuralOperatorBase):
         fns_config = config.training.get("fns_setting", Box({"act": "gelu", "hidden": 32}))
         act    = fns_config.get("act",    "gelu")
 
-        self.grid_nx = config.data.mesh.grid_nx
-        self.grid_ny = config.data.mesh.grid_ny
-
         # interior coordinate grid: ((Nx-2)*(Ny-2), 2)
-        self.fns_x_nodes_np = np.linspace(0, 1, self.grid_nx)
-        self.fns_y_nodes_np = np.linspace(0, 1, self.grid_ny)
-        xi = self.fns_x_nodes_np[1:-1]
-        yi = self.fns_y_nodes_np[1:-1]
+        self.grid_nx,self.grid_ny = config.data.mesh.grid_nx, config.data.mesh.grid_ny
+        self.fns_x_nodes_np, self.fns_y_nodes_np = generate_xy_nodes(grid_type=config.data.mesh.grid_type,
+                                                                     num_points_x=self.grid_nx,
+                                                                     num_points_y=self.grid_ny)
+
+        xi, yi = self.fns_x_nodes_np[1:-1], self.fns_y_nodes_np[1:-1]
         XX, YY = np.meshgrid(xi, yi, indexing='ij')
         xy_flat = np.stack([XX.ravel(), YY.ravel()], axis=-1).astype(np.float32)
         self.register_buffer("fns_xy_nodes_torch",

@@ -58,8 +58,8 @@ testing:
   redundancy: 1.0
 
   mesh:
-    grid_nx: 61
-    grid_ny: 61
+    grid_nx: 121
+    grid_ny: 121
     grid_type: uniform
 
   k_x:

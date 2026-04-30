@@ -1,19 +1,13 @@
 import numpy as np
-import matplotlib.pyplot as plt
-import scipy.sparse as sp
-import scipy.sparse.linalg as spla
 import pickle
+
 
 # =============================================================================
 # 1-D Generation Utilities
-# This file is intentionally restricted to 1D grids and 1D random/function
-# generators. 2D generators should live in src/utils/gen2d_util.py.
 # =============================================================================
-
 
 def load_pkl_file(dataset_path):
     if dataset_path.endswith('.pkl'):
-        # Load pkl File
         with open(dataset_path, 'rb') as f:
             data = pickle.load(f)
 

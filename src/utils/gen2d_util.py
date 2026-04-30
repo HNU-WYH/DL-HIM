@@ -1,175 +1,123 @@
-import sys
-import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-
 import numpy as np
-import matplotlib.pyplot as plt
-import scipy.sparse as sp
-import scipy.sparse.linalg as spla
-import pickle
-from src.utils import cartesian
+from src.utils.gen1d_util import generate_x_nodes_1d
 
-debug = False
 
-def load_pkl_file(dataset_path):
-    if dataset_path.endswith('.pkl'):
-        # Load pkl File
-        with open(dataset_path, 'rb') as f:
-            data = pickle.load(f)
+# =============================================================================
+# 2-D Generation Utilities
+# =============================================================================
 
-        new_data = {
-            'x_data': data.get('x_nodes'),
-            'f_data_train': data.get('f_train'),
-            'k_data_train': data.get('k_train'),
-            'u_data_train': data.get('u_train'),
-            'du_data_train': data.get('du_dx_train'),
-            'f_data_test': data.get('f_test'),
-            'k_data_test': data.get('k_test'),
-            'u_data_test': data.get('u_test'),
-            'du_data_test': data.get('du_dx_test')
-        }
-        return new_data
-
-    else:
-        raise ValueError("Unsupported file format. Only .pkl files are supported.")
-
-def generate_uniform_grid(num_points):
-    x_uniform = np.linspace(0.0, 1.0, num_points)
-    x_uniform = cartesian.power(x_uniform, dimension=2)
-    #print('x_uniform:', x_uniform.shape)
-    return x_uniform
-
-def generate_power_law_grid(num_points, power=3.0):
+def generate_xy_nodes(grid_type, num_points_x, num_points_y):
     """
-    Generate Non-uniform Grid on [0, 1]。
+    Generate two 1D node vectors for the x and y directions.
+
+    Returns:
+        x: (num_points_x, )
+        y: (num_points_y, )
     """
-    y = np.linspace(0.0, 1.0, num_points)
-    x_non_uniform = y ** power
-    return x_non_uniform
+    x = generate_x_nodes_1d(grid_type, num_points_x)
+    y = generate_x_nodes_1d(grid_type, num_points_y)
+    return x, y
 
 
-def generate_tanh_clustered_grid(num_points, strength=3.2):
+def grf_generate_2d(x_nodes, y_nodes, func_num, sigma, l0, mean=0.0, minimal=None, **kwargs):
     """
-    Generate Non-uniform Grid on [0, 1]。
+    Gaussian Random Field on a 2D tensor-product grid using a separable kernel.
+
+        C_{x,y} = σ^2 * K_x ⊗ K_y
+                = σ^2 * (Lx @ Lx^T) ⊗ (Ly @ Ly^T)
+                = σ^2 * (Ly ⊗ Lx) @ (Ly ⊗ Lx)^T
+
+        ⇒ f = u + (Ly ⊗ Lx)z = Lx @ Z @ Ly^T where z = Vec(Z)
+
+    Args:
+        x_nodes:  (Nx, ); the x-axis coordinates.
+        y_nodes:  (Ny, ); the y-axis coordinates.
+        func_num: scalar; Number of independent random fields to generate.
+        sigma:    list; Standard deviations for multi-scale superposition.
+        l0:       list; Length scales for multi-scale superposition.
+        mean:     float; Mean value of the field. Defaults to 0.0.
+        minimal:  float; Minimum value threshold to filter samples.
+
+    Returns:
+        grfs: (func_num, Nx, Ny)
     """
-    y = np.linspace(-1.0, 1.0, num_points)
-    x_warped = np.tanh(strength * y)
-    x_min, x_max = np.tanh(-strength), np.tanh(strength)
-    x_normalized = (x_warped - x_min) / (x_max - x_min)
-    return x_normalized
+    # Compute Kernel X & Y
+    Nx, Ny = len(x_nodes), len(y_nodes)
+    rx2 = (x_nodes - x_nodes[:, None]) ** 2
+    ry2 = (y_nodes - y_nodes[:, None]) ** 2
 
+    eps = 1e-10 # For Robust Decomposition
+    sample_multiplier = 2 if minimal is not None else 1 # For Redundancy
 
-def generate_x_nodes(grid_type, num_points):
-    grid_type = grid_type.lower()
+    grfs_list, collected = [], 0
+    while collected < func_num:
+        sample_size = sample_multiplier * (func_num - collected)
+        samples = np.zeros((sample_size, Nx, Ny), dtype=float)
 
-    if grid_type == 'uniform':
-        return generate_uniform_grid(num_points)
-    elif grid_type == 'power':
-        raise NotImplementedError() 
-    elif grid_type == 'tanh':
-        raise NotImplementedError() 
-    else:
-        raise ValueError(f"Unknown grid type: {grid_type}")
+        for s, l in zip(sigma, l0):
+            Kx = np.exp(-rx2 / (2 * l ** 2))
+            Ky = np.exp(-ry2 / (2 * l ** 2))
+            Lx = np.linalg.cholesky(Kx + eps * np.eye(Nx))
+            Ly = np.linalg.cholesky(Ky + eps * np.eye(Ny))
 
-def get_boundary_inner_idx(x):
-    n = x.shape[0]
-    n_grid = int(np.sqrt(n))
-    bc_idx_x = np.concatenate((np.arange(0, n_grid), np.arange(n-n_grid, n)))
-    bc_idx_y = np.concatenate((np.arange(n_grid, n-n_grid, n_grid), 
-                               np.arange(2*n_grid-1, n - n_grid, n_grid)))
-    bc_idx = np.concatenate((bc_idx_x, bc_idx_y))
-    inner_idx = np.delete(np.arange(n), bc_idx)
-    return bc_idx, inner_idx
+            for n in range(sample_size):
+                Z = np.random.randn(Nx, Ny)
+                samples[n] += float(s) * (Lx @ Z @ Ly.T)
 
-def grf_generate(x_nodes, func_num, sigma, l0, mean=0.0, minimal=None, **kwargs):
-    """
-    Guassian Random Field
-    """
-    x_num  = x_nodes.shape[0]                          # (x_num,)
-    r_square = (x_nodes.reshape(x_num,1, x_nodes.shape[1]) - x_nodes.reshape(1,x_num,-1))**2    # (x_num, x_num, 2)
-    r_square = np.sum(r_square, axis=2)                # (x_num, x_num)
-    covariance_matrix = np.zeros((x_num, x_num))  # (x_num, x_num)
-    target_num = func_num  # cache desired batch size
-    sample_multiplier = 2 if minimal is not None else 1
+        samples += float(mean)
 
-    assert len(sigma) == len(l0)
-    if sigma == [0]:
-        # if sigma_0 = 0，then returns all 0
-        return np.zeros((target_num, x_num))[:func_num]                                 # (func_num, x_num)
-
-    for idx, l in enumerate(l0):
-        s = sigma[idx]
-        covariance_matrix += (s ** 2) * np.exp(- r_square / (2 * l ** 2))               # (x_num, x_num)
-
-    mean = mean * np.ones(x_num)  # (x_num,)
-
-    grfs_list = []
-    collected = 0
-    while collected < target_num:
-        sample_size = sample_multiplier * (target_num - collected)
-        samples = np.random.multivariate_normal(mean, covariance_matrix, sample_size)   # (sample_size, x_num)
         if minimal is not None:
-            samples = samples[np.min(samples, axis=1) > minimal]
-        if len(samples) == 0:
-            continue
+            samples = samples[np.min(samples, axis=(1, 2)) > minimal]
+            # nothing to append
+            if len(samples) == 0:
+                continue
 
         grfs_list.append(samples)
         collected += len(samples)
-    
-    """if debug:
-        grf_plot = grfs_list[0][0].reshape(int(np.sqrt(x_num)),int(np.sqrt(x_num)))
-        plt.imshow(grf_plot, cmap='jet')
-        plt.colorbar()
-        plt.show()
-        exit()"""
 
-    grfs = np.vstack(grfs_list)[:target_num]
-    return grfs
+    return np.vstack(grfs_list)[:func_num]
 
 
-def fourier_generate(x_nodes, func_num, freq_num=3, freq_upper=10, amplitude=0.5, **kwargs):
+def fixed_generate_2d(x_nodes, y_nodes, func_num, value=1.0, **kwargs):
+    """Constant function on a 2D grid."""
+    Nx, Ny = len(x_nodes), len(y_nodes)
+    return np.full((func_num, Nx, Ny), float(value))
+
+
+def gaussian_generate_2d(x_nodes, y_nodes, func_num, standard=True, mean=0.0, std=1.0, **kwargs):
     """
-    Fourier basis Overlapping
+    IID Gaussian field on a 2D grid.
+
+    Returns:
+        samples: (func_num, Nx, Ny)
     """
-    func = []                                                 # (func, x_num)
+    Nx, Ny = len(x_nodes), len(y_nodes)
+    if standard:
+        mean = 0.0
+        std = 1.0
+    return np.random.normal(loc=float(mean), scale=float(std), size=(func_num, Nx, Ny))
+
+
+def fourier_generate_2d(x_nodes, y_nodes, func_num, freq_num=3, freq_upper=10, amplitude=0.5, **kwargs):
+    """
+    Random Fourier series on a 2D tensor-product grid.
+
+    Returns:
+        samples: (func_num, Nx, Ny)
+    """
+    Nx, Ny = len(x_nodes), len(y_nodes)
+    XX, YY = np.meshgrid(x_nodes, y_nodes, indexing="ij")
+    func = []
+
     for _ in range(func_num):
-        f_x = np.zeros_like(x_nodes)                          # the function
-        for i in range(freq_num):
-            n = np.random.randint(1, freq_upper)              # random frequency
-            a_n = np.random.normal(0, amplitude)              # random amplitude for cosine function
-            f_x += a_n * np.cos(np.pi * n * x_nodes)          # cosine function
+        f_xy = np.zeros((Nx, Ny))
+        for _ in range(freq_num):
+            n = np.random.randint(1, freq_upper)
+            m = np.random.randint(1, freq_upper)
+            a_nm = np.random.normal(0, amplitude)
+            b_nm = np.random.normal(0, amplitude)
+            f_xy += a_nm * np.cos(np.pi * n * XX) * np.cos(np.pi * m * YY)
+            f_xy += b_nm * np.sin(np.pi * n * XX) * np.cos(np.pi * m * YY)
+        func.append(f_xy)
 
-            b_n = np.random.normal(0, amplitude)              # random amplitude for sine function
-            f_x += b_n * np.sin(np.pi * n * x_nodes)          # sine function
-        func.append(f_x)
-    return np.array(func)                                     # (func_num, x_len)
-
-
-def gaussian_generate(x_nodes, func_num, **kwargs):
-    """
-    f ~ N(0, 1)
-    """
-    x_num = len(x_nodes)                                      # size of x_nodes
-    size = (func_num, x_num)                                  # size of f_x
-    f_x = np.random.normal(loc=0.0, scale=1.0, size=size)     # sampling from N(0, I)
-    return f_x
-
-
-def fixed_generate(x_nodes, func_num, value=1.0, **kwargs):
-    x_num = len(x_nodes)
-    f_x = np.ones(shape=(func_num, x_num))
-    f_x = value * f_x
-    return f_x
-
-
-function_generators = {
-    "fixed": fixed_generate,
-    "fourier": fourier_generate,
-    "grf": grf_generate,
-    "gaussian": gaussian_generate
-}
-
-if __name__ == "__main__":
-    x = generate_x_nodes('uniform', 10)
-    x = x.reshape(10,10,2)
-    print(x[0,5], x[1,5])
+    return np.array(func)

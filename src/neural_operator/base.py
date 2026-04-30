@@ -5,7 +5,6 @@ import numpy as np
 from box import Box
 from torch import nn
 from warnings import warn
-from src.utils.gen1d_util import generate_x_nodes
 
 
 class NeuralOperatorBase(torch.nn.Module):

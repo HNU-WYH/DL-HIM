@@ -1,17 +1,11 @@
 import os
 import warnings
-import numpy as np
 
 from tqdm import tqdm
 from box import Box
 
 from src.problems import create_problem
-from src.utils.gen2d_util import (
-    generate_xy_nodes,
-    grf_generate_2d,
-    fixed_generate_2d,
-    gaussian_generate_2d,
-)
+from src.utils.gen2d_util import *
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
@@ -36,7 +30,7 @@ class DataGenerator2d:
 
         if self.problem not in ["diffusion2d"]:
             raise NotImplementedError(f"{self.problem} problem is not supported by DataGenerator2d")
-        self.u_generator = create_problem(self.problem)
+        self.u_generator = create_problem(self.problem, self.n_dim)
 
     def __init_data(self):
         Nx, Ny = len(self.x_nodes), len(self.y_nodes)
@@ -147,7 +141,7 @@ class TestDataGenerator2d:
         self.testing_cfg = config.get("testing", Box())
         self.problem = config.problem.type.lower()
         self.solver = config.problem.method.lower()
-        self.u_generator = create_problem(self.problem)
+        self.u_generator = create_problem(self.problem, n_dim=2)
         self.dataset = None
         self.eps = self.testing_cfg.get("eps", 1.0)
         self.func_num = self.testing_cfg.func_num if test_num is None else test_num
