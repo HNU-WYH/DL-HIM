@@ -91,7 +91,7 @@ training:
   mode: static
   operator_type: fns
   batch_size: 256
-  num_epoch: 101
+  num_epoch: 501
   lr: 0.0001
   weight_decay: !!float 1e-8
 

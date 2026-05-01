@@ -26,27 +26,47 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 # Configuration
 # =============================================================================
 CONFIG_WILDCARD = "diffusion2d*"
-TEST_GRID_SHAPE: Optional[Tuple[int, int]] = None
+TEST_GRID_SHAPE: Optional[Tuple[int, int]] = 121, 121
 TEST_DATASET_PATH: Optional[str] = None
-SAMPLE_INDICES: Optional[Sequence[int]] = [0, 1]
-MAX_ITER: Optional[int] = 500
+SAMPLE_INDICES: Optional[Sequence[int]] = None
+MAX_ITER: Optional[int] = 800
 TOL: Optional[float] = None
 OUTPUT_PATH: Optional[str] = None
 
 MODEL_PATHS: Dict[str, Optional[str]] = {
-    "Default": None,
+    "Default": "./checkpoints/fns_diffusion2d_fno/diffusion2d_2D_Grid31x31_ep500.pt",
 }
 
 CASES: List[Dict] = [
+    # {"label": "Pure-DeepONet", "mode": "neural", "model": "Default", "one_shot": True},
+
     {"label": "Jacobi", "mode": "numerical", "model": None, "numerical_method": "jacobi"},
+
     {"label": "HINTS-Fixed (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
-     "relaxation_factor": 0.6, "hybrid_ratio": 20, "neural_update": "fixed"},
+     "relaxation_factor": 0.66, "hybrid_ratio": 20, "neural_update": "fixed"},
+
     {"label": "HINTS-AA (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
-     "relaxation_factor": 0.6, "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 10},
+     "relaxation_factor": 0.66, "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 10},
+
     {"label": "HINTS-PAAA (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
-     "relaxation_factor": 0.6, "hybrid_ratio": 20, "neural_update": "paaa", "aa_m": 10},
+     "relaxation_factor": 0.66, "hybrid_ratio": 20, "neural_update": "paaa", "aa_m": 10},
+
     {"label": "HINTS-ELS (Jacobi)", "mode": "hybrid", "model": "Default", "numerical_method": "jacobi",
-     "relaxation_factor": 0.6, "hybrid_ratio": 20, "neural_update": "cg"},
+     "relaxation_factor": 0.66, "hybrid_ratio": 20, "neural_update": "cg"},
+
+    {"label": "Gauss-Seidel", "mode": "numerical", "model": None, "numerical_method": "gauss-seidel"},
+
+    {"label": "HINTS-Fixed (GS)", "mode": "hybrid", "model": "Default", "numerical_method": "gauss-seidel",
+     "relaxation_factor": 1.0, "hybrid_ratio": 20, "neural_update": "fixed"},
+
+    {"label": "HINTS-AA (GS)", "mode": "hybrid", "model": "Default", "numerical_method": "gauss-seidel",
+     "relaxation_factor": 1.0, "hybrid_ratio": 20, "neural_update": "aa", "aa_m": 10},
+
+    {"label": "HINTS-PAAA (GS)", "mode": "hybrid", "model": "Default", "numerical_method": "gauss-seidel",
+     "relaxation_factor": 1.0, "hybrid_ratio": 20, "neural_update": "paaa", "aa_m": 10},
+
+    {"label": "HINTS-ELS (GS)", "mode": "hybrid", "model": "Default", "numerical_method": "gauss-seidel",
+     "relaxation_factor": 1.0, "hybrid_ratio": 20, "neural_update": "cg"},
 ]
 
 
@@ -66,7 +86,7 @@ def load_evaluation_dataset(cfg: Box, test_path=TEST_DATASET_PATH) -> Tuple[np.l
 def _interp_grid_2d(values: np.ndarray,
                     x_src: np.ndarray, y_src: np.ndarray,
                     x_tgt: np.ndarray, y_tgt: np.ndarray) -> np.ndarray:
-    fn = RegularGridInterpolator((x_src, y_src), values, method="linear")
+    fn = RegularGridInterpolator((x_src, y_src), values, method="linear", bounds_error=False, fill_value=None)
     XX, YY = np.meshgrid(x_tgt, y_tgt, indexing="ij")
     pts = np.stack([XX.ravel(), YY.ravel()], axis=-1)
     return fn(pts).reshape(len(x_tgt), len(y_tgt))
@@ -343,13 +363,14 @@ METHOD_COLORS = {
     "ELS":   "#ff7f0e",
     "AA":    "#2ca02c",
     "PAAA":  "#d62728",
-    "Jacobi": "#9467bd",
+}
+SOLVER_STYLES = {
+    "Jacobi": "-",
+    "GS":     "--",
 }
 
 
 def _get_method_name(label: str) -> str:
-    if label == "Jacobi":
-        return "Jacobi"
     if "PAAA" in label:
         return "PAAA"
     if "AA" in label:
@@ -373,26 +394,32 @@ if __name__ == "__main__":
 
     for label, vals in avg_results.items():
         method = _get_method_name(label)
+        solver = "GS" if "GS" in label else "Jacobi"
         color = METHOD_COLORS[method]
-        ax1.semilogy(vals["iter"], vals["error"], color=color, linewidth=1.5, label=label)
-        ax2.semilogy(vals["iter"], vals["residual"], color=color, linewidth=1.5, label=label)
+        ls = SOLVER_STYLES[solver]
+        ax1.semilogy(vals["iter"], vals["error"], color=color, linestyle=ls, linewidth=1.5)
+        ax2.semilogy(vals["iter"], vals["residual"], color=color, linestyle=ls, linewidth=1.5)
 
     ax1.set_title("Average Error Norm vs Iteration (2D)")
     ax1.set_ylabel(r"$\ell_2$ Norm of Error")
+    ax1.set_ylim(top=1e2)
     ax1.grid(True)
 
     ax2.set_title("Average Residual Norm vs Iteration (2D)")
     ax2.set_xlabel("Iteration")
     ax2.set_ylabel(r"$\ell_2$ Norm of Residual")
+    ax2.set_ylim(top=1e2)
     ax2.grid(True)
 
-    legend_methods = [Line2D([0], [0], color=METHOD_COLORS[_get_method_name(label)], lw=2, label=label)
-                      for label in avg_results.keys()]
+    legend_methods = [Line2D([0], [0], color=c, lw=2, label=f"HINTS-{m}") for m, c in METHOD_COLORS.items()]
+    legend_solvers = [Line2D([0], [0], color="gray", linestyle=s, lw=2, label=n) for n, s in SOLVER_STYLES.items()]
 
     plt.tight_layout()
-    plt.subplots_adjust(bottom=0.16)
-    fig.legend(handles=legend_methods, loc="lower center", bbox_to_anchor=(0.5, 0.01),
-               ncol=2, frameon=True)
+    plt.subplots_adjust(bottom=0.18)
+    fig.legend(handles=legend_methods, title="Methods (Colors)",
+               loc="lower center", bbox_to_anchor=(0.35, 0.005), ncol=2, frameon=True)
+    fig.legend(handles=legend_solvers, title="Solvers (Line Styles)",
+               loc="lower center", bbox_to_anchor=(0.78, 0.005), ncol=1, frameon=True)
 
     if OUTPUT_PATH:
         if os.path.dirname(OUTPUT_PATH):
