@@ -7,7 +7,7 @@ from .base import NeuralOperatorBase
 
 from src.utils.gen1d_util import generate_x_nodes_1d
 from src.utils.gen2d_util import generate_xy_nodes
-from src.utils.fns_blocks import MetaT1D, UNet1D, FNOMetaLambda1D, MetaT2D, FNOMetaLambda2D
+from src.utils.fns_blocks import MetaT1D, UNet1D, FNOMetaLambda1D, MetaT2D, FNOMetaLambda2D, QueryMetaLambda2D
 
 
 # =============================================================================
@@ -351,9 +351,12 @@ class FNS2d(NeuralOperatorBase):
         self.arch_type = fns_config.get("meta_lambda", "fno").lower()
         if self.arch_type == "unet":
             raise NotImplementedError(
-                "MetaUNet is not supported for FNS2d. Set meta_lambda='fno' in fns_setting."
+                "MetaUNet is not supported for FNS2d. Set meta_lambda='fno' or 'sfno' in fns_setting."
             )
-        self.meta_lambda = FNOMetaLambda2D(fns_config)
+        elif self.arch_type == "sfno":
+            self.meta_lambda = FNOMetaLambda2D(fns_config)
+        else:  # "fno" (default): query-based, resolution-invariant
+            self.meta_lambda = QueryMetaLambda2D(fns_config)
 
         # meta-T sub-networks (2D kernels: [B, Cout, Cin, 3, 3])
         self.meta1 = MetaT2D(1, 4, act=act)

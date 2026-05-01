@@ -462,3 +462,88 @@ class FNOMetaLambda2D(nn.Module):
         out = self.sfno(x, N)                        # [B, 1, N, N] real
         w   = torch.fft.fft2(out, dim=(2, 3)) / (N ** 2)
         return torch.fft.fftshift(w, dim=(2, 3))
+
+
+# -----------4. Meta-λ: Query-based (2D) ------------
+class QueryMetaLambda2D(nn.Module):
+    """
+    Query-based 2D meta-λ: directly analogous to FNOMetaLambda1D.
+
+    Pipeline:
+      k_norm [B,1,Nx,Ny] → FNO backbone → global z [B, hidden]
+      For each of N² positions (u,v) in [0,1]²:
+          sinusoidal embedding phi(u,v) + z → MLP → one complex weight
+      → [B, 1, N, N] cfloat   (no fft2, no /N² needed)
+
+    Because positions are always normalized to [0,1]², the output size N
+    can change freely at inference without going out of distribution.
+
+    Config keys (sub-set of fns_setting):
+        hidden   int         backbone + MLP width          (default 32)
+        modes    int|list    FNO backbone wavenumbers       (default 8)
+        Lfreq    int         sinusoidal encoding levels     (default 4)
+        act      str         activation function            (default "gelu")
+    """
+    def __init__(self, config):
+        super().__init__()
+        hidden     = config.get("hidden", 32)
+        modes_raw  = config.get("modes",  8)
+        modes      = modes_raw[0] if isinstance(modes_raw, (list, tuple)) else int(modes_raw)
+        self.Lfreq = config.get("Lfreq",  4)
+        act        = config.get("act",   "gelu")
+
+        # Backbone: k_norm [B, 1, Nx, Ny] → z [B, hidden]
+        # Two FNO layers (spectral conv + pointwise skip), then global avg pool.
+        # Directly mirrors FNOMetaLambda1D's SpectralConv + w structure in 2D.
+        self.lifting = nn.Conv2d(1, hidden, 1)
+        self.fconv1  = _FourierConv2d(hidden, hidden, modes, modes)
+        self.skip1   = nn.Conv2d(hidden, hidden, 1)
+        self.fconv2  = _FourierConv2d(hidden, hidden, modes, modes)
+        self.skip2   = nn.Conv2d(hidden, hidden, 1)
+        self.act_fn  = getActivationFunction(act)
+
+        # Query head: (z, phi) → (real, imag) for one spectral weight
+        # D_phi = 2 raw coords + 4 sinusoids-per-level-per-axis
+        D_phi = 4 * self.Lfreq + 2
+        self.query_head = nn.Sequential(
+            nn.Linear(hidden + D_phi, hidden),
+            getActivationFunction(act),
+            nn.Linear(hidden, hidden),
+            getActivationFunction(act),
+            nn.Linear(hidden, 2),
+        )
+
+    def _freq_embed_2d(self, N: int, device) -> torch.Tensor:
+        """Sinusoidal 2D positional encoding. Returns [N², 4*Lfreq+2]."""
+        t        = torch.linspace(0., 1., N, device=device)
+        tu, tv   = torch.meshgrid(t, t, indexing='ij')
+        tu, tv   = tu.reshape(-1, 1), tv.reshape(-1, 1)   # [N², 1]
+        feats    = [tu, tv]
+        for k in range(self.Lfreq):
+            w = (2. ** k) * 2. * torch.pi
+            feats += [torch.sin(w * tu), torch.cos(w * tu),
+                      torch.sin(w * tv), torch.cos(w * tv)]
+        return torch.cat(feats, dim=-1)   # [N², 4*Lfreq+2]
+
+    def forward(self, k_norm: torch.Tensor, N: int) -> torch.Tensor:
+        """
+        k_norm: [B, 1, Nx, Ny]
+        N:      band size
+        Returns [B, 1, N, N] cfloat — directly complex spectral weights.
+        """
+        # backbone: extract global condition
+        x = self.lifting(k_norm)
+        x = self.act_fn(self.fconv1(x) + self.skip1(x))
+        x = self.act_fn(self.fconv2(x) + self.skip2(x))
+        z = x.mean(dim=(-2, -1))                           # [B, hidden]
+
+        # query at N² positions
+        B   = z.shape[0]
+        phi = self._freq_embed_2d(N, k_norm.device)        # [N², D_phi]
+        inp = torch.cat([
+            z.unsqueeze(1).expand(-1, N * N, -1),
+            phi.unsqueeze(0).expand(B,  -1, -1),
+        ], dim=-1)                                          # [B, N², hidden+D_phi]
+        out = self.query_head(inp)                          # [B, N², 2]
+        w   = torch.complex(out[..., 0], out[..., 1])
+        return w.view(B, 1, N, N)
