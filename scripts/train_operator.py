@@ -9,7 +9,7 @@ from src.neural_operator import create_no
 from src.training import StaticTrainer, DynamicTrainer
 from src.utils.cfg_util import load_config
 
-CONFIG_WILDCARD = "diffusion2d*"    # config filename wildcard
+CONFIG_WILDCARD = "diffusion1d*"    # config filename wildcard
 TRAINER_TYPE = "static"           # "static" or "dynamic"
 DATASET_PATH = None               # path to .npz dataset; None -> config default
 LOSS_NORM = None                  # "l1", "l2", or "h1"; None -> config default

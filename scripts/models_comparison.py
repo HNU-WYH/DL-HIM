@@ -15,8 +15,8 @@ from scripts.evaluate_single_solver import evaluate_case_on_sample, load_evaluat
 # In[]:
 CONFIG_WILDCARD = "diffusion1d*"
 # CONFIG_WILDCARD = "helmholtz1d*"
-CHECKPOINT_ROOT = "checkpoints/fns_diffusion1d/"
-# CHECKPOINT_ROOT = "checkpoints/deeponet_diffusion1d"
+# CHECKPOINT_ROOT = "checkpoints/fns_diffusion1d/"
+CHECKPOINT_ROOT = "checkpoints/deeponet_diffusion1d"
 # CHECKPOINT_ROOT = "checkpoints/deeponet_helmholtz1d"
 
 TEST_GRID_NUM: Optional[int] = 201                    # if not equal, interpolate to uniformly spaced TEST_GRID_NUM
@@ -24,6 +24,7 @@ TEST_DATASET_PATH: Optional[str] = None                # path to .npz test datas
 
 SAMPLE_INDICES: Optional[Iterable[int]] = None
 PLOT_SAMPLE_INDICES: Optional[Iterable[int]] = None
+MAX_ITER: Optional[int] = None                 # None -> use cfg.problem.iteration
 
 # In[]:
 def discover_checkpoints(root: str = CHECKPOINT_ROOT) -> List[Tuple[str, str]]:
@@ -63,6 +64,7 @@ def compare_checkpoints(
         plot_indices: Union[int, Optional[Iterable[int]]] = PLOT_SAMPLE_INDICES,
         sample_indices: Union[int, Optional[Iterable[int]]] = SAMPLE_INDICES,
         output_path: Optional[str] = None,
+        max_iter: Optional[int] = MAX_ITER,
 ):
     # load config and data
     cfg = load_config(CONFIG_WILDCARD)
@@ -97,7 +99,7 @@ def compare_checkpoints(
 
     for case in tqdm(checkpoint_cases, desc="Checkpoints"):
         for dataset_idx, (k_sample, f_sample) in enumerate(zip(k_samples, f_samples)):
-            err_hist, res_hist, time_hist, u_curr, u_true = evaluate_case_on_sample(cfg, case, k_sample, f_sample, x_nodes)
+            err_hist, res_hist, time_hist, u_curr, u_true = evaluate_case_on_sample(cfg, case, k_sample, f_sample, x_nodes, max_iter=max_iter)
 
             case_results[case["label"]]["errors"].append(err_hist)
             case_results[case["label"]]["residuals"].append(res_hist)
@@ -160,7 +162,7 @@ if __name__ == "__main__":
                         help="Output file path for the figure, e.g. 'results/comparison.pdf'. "
                              "Supports any matplotlib format (.pdf, .png, .svg). "
                              "If not provided, the figure is shown interactively and not saved.")
-    args = parser.parse_args()
+    args, _ = parser.parse_known_args()
 
     avg_results3 = compare_checkpoints(plot_indices=PLOT_SAMPLE_INDICES, output_path=args.output)
 

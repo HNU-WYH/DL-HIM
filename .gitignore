@@ -4,10 +4,7 @@
 /%temp/
 /.idea
 /%others
-suggestion.md
-progress.md
 .venv
 *.DS_store
-/todolist.md
-/程序迁移/todolist.md
 /.review
+/raw_data
