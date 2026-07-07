@@ -84,9 +84,9 @@ testing:
 # ============================
 training:
   mode: static                      # "static" or "dynamic"
-  operator_type: FNS           # Neural Operator Type ("DeepONet", "MIONet", "FNS")
+  operator_type: FNS                # Neural Operator Type ("DeepONet", "MIONet", "FNS")
   batch_size: 1024                  # batch size
-  num_epoch: 101                  # Epoch num
+  num_epoch: 101                    # Epoch num
   lr: 0.0001                        # learning rate
   weight_decay: !!float 1e-8        # weight decay
 
@@ -125,7 +125,6 @@ training:
 # ==========================================================
 solver:
   type: Hybrid                                 # "Hybrid", "Numerical", "Neural"
-  gpu_pipeline: false                          # true: full GPU closed-loop; false: GPU-CPU Hybrid
   numerical:
     method: jacobi                             # the numerical solver, "jacobi" or "GS"
     relaxation_factor:  0.6                    # the relaxation coefficient for the classical smoother

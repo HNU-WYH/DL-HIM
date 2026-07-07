@@ -1,9 +1,8 @@
 *.pyc
 *.png
-/%ckpt备份/
-/%temp/
+.venv
+*.DS_store
+
+/%deprecated/
+/experiment
 /.idea
-/%others
-/.review
-suggestion.md
-progress.md

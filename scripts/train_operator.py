@@ -9,13 +9,13 @@ from src.neural_operator import create_no
 from src.training import StaticTrainer, DynamicTrainer
 from src.utils.cfg_util import load_config
 
-CONFIG_WILDCARD = "diffusion*"    # config filename wildcard
+CONFIG_WILDCARD = "diffusion1d*"    # config filename wildcard
 TRAINER_TYPE = "static"           # "static" or "dynamic"
 DATASET_PATH = None               # path to .npz dataset; None -> config default
 LOSS_NORM = None                  # "l1", "l2", or "h1"; None -> config default
 LOSS_TYPE = None                  # "error" or "residual"; None -> config default
 SAVE_AFTER_TRAIN = True           # save final checkpoint after training
-PRINT_INTERVAL = 100              # Interval of printing; DeepONet recommend 1000, FNS recommend 100
+PRINT_INTERVAL = 50              # Interval of printing; DeepONet recommend 1000, FNS recommend 100
 PLOT_INTERVAL = None              # Interval of plotting validation samples; None = disable
 
 # --- Checkpoint saving -------------------------------------------------------
@@ -95,11 +95,15 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
     ckpt_base = ckpt_dir(cfg)
     os.makedirs(ckpt_base, exist_ok=True)
 
-    # checkpoint filename prefix: e.g. "diffusion_1D_Grid31"
+    # checkpoint filename prefix: e.g. "diffusion_1D_Grid31" or "diffusion2d_2D_Grid31x31"
     problem = cfg.problem.type.lower()
     n_dim = cfg.problem.n_dim
-    grid_num = cfg.data.mesh.grid_num
-    ckpt_name = f"{problem}_{n_dim}D_Grid{grid_num}"
+    mesh_cfg = cfg.data.mesh
+    if n_dim == 1:
+        grid_label = mesh_cfg.grid_num
+    else:
+        grid_label = f"{mesh_cfg.grid_nx}x{mesh_cfg.grid_ny}"
+    ckpt_name = f"{problem}_{n_dim}D_Grid{grid_label}"
 
     model = create_no(cfg)
     trainer = select_trainer(model, trainer_type, save_path=ckpt_base,
@@ -148,9 +152,9 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
     # ==============================================================
 
 
-def batch_train(trainer_types=("static", "dynamic"),    # "dynamic", ),
-                loss_types=("error", ),
-                loss_norms=("l2", ),
+def batch_train(trainer_types=("static", "dynamic", ),
+                loss_types=("error", "residual"),
+                loss_norms=("l2", "l1", "h1"),
                 config_wildcard=CONFIG_WILDCARD,
                 dataset_path=DATASET_PATH,
                 save_after_train=SAVE_AFTER_TRAIN,

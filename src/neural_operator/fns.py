@@ -2,13 +2,17 @@ import numpy as np
 import torch
 
 from box import Box
-from torch import nn
 import torch.nn.functional as F
 from .base import NeuralOperatorBase
 
-from src.utils.gen1d_util import generate_x_nodes
+from src.utils.gen1d_util import generate_x_nodes_1d
+from src.utils.gen2d_util import generate_xy_nodes
+from src.utils.fns_blocks import MetaT1D, UNet1D, FNOMetaLambda1D, MetaT2D, FNOMetaLambda2D, QueryMetaLambda2D
 
 
+# =============================================================================
+# Neural Operator Based on 1-D FNS
+# =============================================================================
 class FNS1d(NeuralOperatorBase):
     def __init__(self, config: Box):
         super().__init__(config)
@@ -31,7 +35,7 @@ class FNS1d(NeuralOperatorBase):
         # Grid Properties
         # The resolution of meta-λ in FNS is fixed
         self.fns_num_x_nodes = config.data.mesh.grid_num
-        self.fns_x_nodes_np = generate_x_nodes(grid_type=config.data.mesh.grid_type, num_points=self.fns_num_x_nodes)
+        self.fns_x_nodes_np = generate_x_nodes_1d(grid_type=config.data.mesh.grid_type, num_points=self.fns_num_x_nodes)
         self.register_buffer("fns_x_nodes_torch",
                              torch.tensor(self.fns_x_nodes_np[1:-1, None], dtype=torch.float32, device=self.device))
 
@@ -310,240 +314,263 @@ class FNS1d(NeuralOperatorBase):
         return k_x, f_x, x_f     # (D,), (D - 2,), (G - 2, 1)
 
 
-def getActivationFunction(act: str):
-    act = act.lower()
-    if act == 'relu':
-        return nn.ReLU()
-    if act == "gelu":
-        return nn.GELU()
-    if act == 'tanh':
-        return nn.Tanh()
-    if act == "elu":
-        return nn.ELU()
-    if act == "leakyrelu":
-        return nn.LeakyReLU()
-    raise NotImplementedError(f"Unknown activation function: {act}")
+# =============================================================================
+# Neural Operator Based on 2-D FNS
+# =============================================================================
+class FNS2d(NeuralOperatorBase):
+    def __init__(self, config: Box):
+        super().__init__(config)
 
+        fns_config = config.training.get("fns_setting", Box({"act": "gelu", "hidden": 32}))
+        act    = fns_config.get("act",    "gelu")
 
-class MetaT1D(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, act: str = "gelu", hidden: int = 64, pool: int = 8):
-        super().__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
+        # interior coordinate grid: ((Nx-2)*(Ny-2), 2)
+        self.grid_nx,self.grid_ny = config.data.mesh.grid_nx, config.data.mesh.grid_ny
+        self.fns_x_nodes_np, self.fns_y_nodes_np = generate_xy_nodes(grid_type=config.data.mesh.grid_type,
+                                                                     num_points_x=self.grid_nx,
+                                                                     num_points_y=self.grid_ny)
 
-        self.cnn = nn.Sequential(
-            nn.Conv1d(1, 8, 5, padding=2),
-            getActivationFunction(act),
-            nn.Conv1d(8, 16, 5, padding=2),
-            getActivationFunction(act),
-            nn.Conv1d(16, 32, 5, padding=2),
-            getActivationFunction(act),
-            nn.AdaptiveAvgPool1d(pool),
-        )
+        xi, yi = self.fns_x_nodes_np[1:-1], self.fns_y_nodes_np[1:-1]
+        XX, YY = np.meshgrid(xi, yi, indexing='ij')
+        xy_flat = np.stack([XX.ravel(), YY.ravel()], axis=-1).astype(np.float32)
+        self.register_buffer("fns_xy_nodes_torch",
+                             torch.tensor(xy_flat, dtype=torch.float32))
 
-        # Output dim for the complex 1D kernel [Out_channel, In_chanel 3]
-        output_dim = in_channels * out_channels * 3
-        self.fnn = nn.Sequential(
-            nn.Linear(32 * pool, hidden),
-            getActivationFunction(act),
-            nn.Linear(hidden, hidden),
-            getActivationFunction(act),
-            nn.Linear(hidden, 2 * output_dim)
-        )
+        # hard constraint H(x,y) = x(1-x)*y(1-y)
+        self.use_hard_cons = config.training.don_setting.hard_cons
+        if self.use_hard_cons:
+            self.hard_constraints = lambda x, y: x * (1.0 - x) * y * (1.0 - y)
+        else:
+            self.hard_constraints = None
 
-    def forward(self, x):
+        # normalization buffers
+        self.register_buffer("k_mean",  torch.zeros(1, dtype=torch.float32))
+        self.register_buffer("k_sigma", torch.zeros(1, dtype=torch.float32))
+
+        # meta-lambda
+        self.arch_type = fns_config.get("meta_lambda", "fno").lower()
+        if self.arch_type == "unet":
+            raise NotImplementedError(
+                "MetaUNet is not supported for FNS2d. Set meta_lambda='fno' or 'sfno' in fns_setting."
+            )
+        elif self.arch_type == "sfno":
+            self.meta_lambda = FNOMetaLambda2D(fns_config)
+        else:  # "fno" (default): query-based, resolution-invariant
+            self.meta_lambda = QueryMetaLambda2D(fns_config)
+
+        # meta-T sub-networks (2D kernels: [B, Cout, Cin, 3, 3])
+        self.meta1 = MetaT2D(1, 4, act=act)
+        self.meta2 = MetaT2D(4, 4, act=act)
+        self.meta3 = MetaT2D(4, 1, act=act)
+
+        self.to(self.device)
+
+    def _normalize_k(self, k):
+        if torch.all(self.k_sigma == 0):
+            raise ValueError("k_mean and k_sigma must be set before normalization.")
+        return (k - self.k_mean) / self.k_sigma
+
+    @staticmethod
+    def odd_extension_2d(r: torch.Tensor) -> torch.Tensor:
+        """r: [B, 1, Mx, My] → [B, 1, 2*(Mx+1), 2*(My+1)], four-quadrant odd extension."""
+        B, C, Mx, My = r.shape
+        rsym = torch.zeros(B, C, 2*(Mx+1), 2*(My+1), device=r.device, dtype=r.dtype)
+        rsym[:, :, 1:Mx+1, 1:My+1] =  r
+        rsym[:, :, Mx+2:,  1:My+1] = -torch.flip(r, dims=(2,))
+        rsym[:, :, 1:Mx+1, My+2:]  = -torch.flip(r, dims=(3,))
+        rsym[:, :, Mx+2:,  My+2:]  =  torch.flip(r, dims=(2, 3))
+        return rsym
+
+    @staticmethod
+    def ik2_2d(Mx: int, My: int, device, dtype) -> torch.Tensor:
+        """Spectral inverse-Laplacian weights: 1/(kx²+ky²), [1,1,Lx,Ly] cfloat."""
+        Lx = 2 * (Mx + 1)
+        Ly = 2 * (My + 1)
+        kx = torch.arange(-Mx-1, Mx+1, device=device, dtype=dtype) * torch.pi
+        ky = torch.arange(-My-1, My+1, device=device, dtype=dtype) * torch.pi
+        k2 = kx.view(Lx, 1)**2 + ky.view(1, Ly)**2
+        nz  = k2 != 0
+        ik2 = torch.zeros_like(k2)
+        ik2[nz]  = 1.0 / k2[nz]
+        ik2[~nz] = 1.0
+        return ik2.view(1, 1, Lx, Ly).to(torch.cfloat)
+
+    @staticmethod
+    def complex_conv2d(x: torch.Tensor, w: torch.Tensor, padding: int = 1) -> torch.Tensor:
         """
-        x: [B, 1, L]
+        Per-sample complex 2D convolution via grouped conv.
+        x: [B, Cin, H, W] complex
+        w: [B, Cout, Cin, Kh, Kw] complex
         """
-        z = self.cnn(x).flatten(1)             # [B, 32, pool] -> [B, 32 * pool]
-        p = self.fnn(z)                        # [B, 2 * output_dim]
+        assert torch.is_complex(x) and torch.is_complex(w)
+        B, Cin, H, W = x.shape
+        B2, Cout, Cin2, Kh, Kw = w.shape
+        assert Cin == Cin2 and B == B2
 
-        output_dim = self.in_channels * self.out_channels * 3
-        p_real = p[:, :output_dim].view(-1, self.out_channels, self.in_channels, 3)
-        p_imag = p[:, output_dim:].view(-1, self.out_channels, self.in_channels, 3)
-        return torch.complex(p_real, p_imag)
+        xr, xi = x.real, x.imag
+        wr, wi = w.real, w.imag
 
+        def group_conv(inp: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
+            inp_g = inp.reshape(1, B * Cin, H, W)
+            w_g   = weight.reshape(B * Cout, Cin, Kh, Kw)
+            out   = F.conv2d(inp_g, w_g, padding=padding, groups=B)
+            return out.reshape(B, Cout, out.size(-2), out.size(-1))
 
-class ResBlock1D(nn.Module):
-    def __init__(self, c, act):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Conv1d(c, c, 3, padding=1),
-            nn.BatchNorm1d(c),
-            getActivationFunction(act),
-            nn.Conv1d(c, c, 3, padding=1),
-        )
-        self.act = nn.Sequential(nn.BatchNorm1d(c), getActivationFunction(act))
+        yr = group_conv(xr, wr) - group_conv(xi, wi)
+        yi = group_conv(xr, wi) + group_conv(xi, wr)
+        return torch.complex(yr, yi)
 
-    def forward(self, x):
-        return self.act(self.net(x) + x)
+    @staticmethod
+    def transition_2d(x_hat: torch.Tensor, Ws) -> torch.Tensor:
+        for W in Ws:
+            x_hat = FNS2d.complex_conv2d(x_hat, W, padding=1)
+        return x_hat
 
-
-class UNet1D(nn.Module):
-    """
-    U-Net based Meta-Network to generate spectral filter weights \theta.
-    """
-
-    def __init__(self, act="gelu", hidden=32):
-        super().__init__()
-        self.act = act
-
-        self.in_conv = nn.Sequential(
-            nn.Conv1d(1, hidden, 5, padding=2),
-            getActivationFunction(act),
-            ResBlock1D(hidden, act),
-        )
-
-        self.down1 = nn.Sequential(
-            nn.Conv1d(hidden, hidden * 2, 5, stride=2, padding=2),
-            nn.BatchNorm1d(hidden * 2),
-            getActivationFunction(act),
-        )
-
-        self.down2 = nn.Sequential(
-            nn.Conv1d(hidden * 2, hidden * 4, 5, stride=2, padding=2),
-            nn.BatchNorm1d(hidden * 4),
-            getActivationFunction(act),
-        )
-
-        self.mid = nn.Sequential(
-            ResBlock1D(hidden * 4, act),
-            ResBlock1D(hidden * 4, act),
-        )
-
-        self.up2 = nn.Sequential(
-            getActivationFunction(act),
-            nn.ConvTranspose1d(hidden * 4, hidden * 2, 4, stride=2, padding=1),
-            nn.BatchNorm1d(hidden * 2),
-        )
-        self.up1 = nn.Sequential(
-            getActivationFunction(act),
-            nn.ConvTranspose1d(hidden * 2, hidden, 4, stride=2, padding=1),
-            nn.BatchNorm1d(hidden),
-        )
-
-        self.out_conv = nn.Conv1d(hidden, 1, 1)
-
-    def forward(self, coef_signal: torch.Tensor, Lfft: int) -> torch.Tensor:
+    def forward(self, k_x, f_x, a_mats=None, compute_du: bool = False,
+                trunk_input=None, **kwargs):
         """
-            coef_signal: [B, 1, Lc] real
-            Lfft: Target length in frequency domain
+        k_x: [B, Nx, Ny] or [B, 1, Nx, Ny]
+        f_x: [B, Mx, My] or [B, 1, Mx, My]  (interior, Mx=Nx-2, My=Ny-2)
+        Returns: {"u_pred": [B, Mx, My], "du_pred": None}
         """
-        # mapping from L to L_ext
-        x0 = self.in_conv(coef_signal)
-        x0 = F.interpolate(x0, size=Lfft, mode='linear', align_corners=True)
+        if k_x.ndim == 2: k_x = k_x.unsqueeze(0)
+        if f_x.ndim == 2: f_x = f_x.unsqueeze(0)
+        if k_x.ndim == 3: k_x = k_x.unsqueeze(1)
+        if f_x.ndim == 3: f_x = f_x.unsqueeze(1)
 
-        x1 = self.down1(x0)
-        x2 = self.down2(x1)
-        xm = self.mid(x2)
+        k_x = k_x.to(self.device)
+        f_x = f_x.to(self.device)
 
-        y2 = self.up2(xm)
-        # Pad or crop to match skip connection size if needed
-        y2 = y2[..., :x1.size(-1)] + x1
+        Mx, My = f_x.shape[-2], f_x.shape[-1]
+        k_norm = self._normalize_k(k_x)
 
-        y1 = self.up1(y2)
-        y1 = y1[..., :x0.size(-1)] + x0
+        # odd extension
+        rsym = self.odd_extension_2d(f_x)
+        Lx_ext, Ly_ext = rsym.shape[-2], rsym.shape[-1]
 
-        out = self.out_conv(y1)  # [B, 1, Lfft]
+        # band indices (same ratio as 1D: ±L/8 around centre)
+        start_x = Lx_ext // 2 - Lx_ext // 8
+        end_x   = Lx_ext // 2 + Lx_ext // 8 + 1
+        start_y = Ly_ext // 2 - Ly_ext // 8
+        end_y   = Ly_ext // 2 + Ly_ext // 8 + 1
+        band_x  = end_x - start_x
+        band_y  = end_y - start_y
+        assert band_x == band_y, f"Non-square band ({band_x}×{band_y}); use equal grid_nx/grid_ny."
 
-        # Convert physical prediction to frequency domain weights (complex)
-        w = torch.fft.fft(out, dim=-1) / (Lfft ** 0.5)
-        w = torch.fft.fftshift(w, dim=-1)
-        return w.to(torch.cfloat)
+        # meta-T: per-sample 2D conv kernels
+        W1 = self.meta1(k_norm).to(torch.cfloat)  # [B, 4, 1, 3, 3]
+        W2 = self.meta2(k_norm).to(torch.cfloat)  # [B, 4, 4, 3, 3]
+        W3 = self.meta3(k_norm).to(torch.cfloat)  # [B, 1, 4, 3, 3]
 
+        # meta-lambda: spectral filter [B, 1, band, band]
+        weights_theta = self.meta_lambda(k_norm, band_x)
 
-class SpectralConv1d(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, modes: int):
-        super().__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.modes = modes
+        # inverse-Laplacian weights cropped to band
+        ik2 = self.ik2_2d(Mx, My, rsym.device, rsym.dtype)[:, :, start_x:end_x, start_y:end_y]
 
-        scale = 1.0 / (in_channels * out_channels)
-        self.weights = nn.Parameter(
-            scale * torch.randn(in_channels, out_channels, modes, dtype=torch.cfloat)
+        # 2D FFT pipeline
+        r_hat = torch.fft.ifft2(rsym, dim=(-2, -1))
+        r_hat = torch.fft.fftshift(r_hat, dim=(-2, -1))[:, :, start_x:end_x, start_y:end_y]
+
+        r_hat   = self.transition_2d(r_hat, [W1, W2, W3])
+        out_hat = r_hat * weights_theta * ik2
+        out_hat = self.transition_2d(out_hat, [
+            W3.transpose(1, 2).flip(-1).flip(-2).conj(),
+            W2.transpose(1, 2).flip(-1).flip(-2).conj(),
+            W1.transpose(1, 2).flip(-1).flip(-2).conj(),
+        ])
+
+        # zero-pad back to extended size, then back-transform
+        out_hat = F.pad(out_hat, (start_y, Ly_ext - end_y, start_x, Lx_ext - end_x))
+        out_hat = torch.fft.ifftshift(out_hat, dim=(-2, -1))
+        e_full  = torch.fft.fft2(out_hat, dim=(-2, -1)).real
+        u_pred  = e_full[:, :, 1:Mx+1, 1:My+1].squeeze(1)  # [B, Mx, My]
+
+        # hard constraint H(x,y) = x(1-x)*y(1-y)
+        if self.hard_constraints is not None:
+            if trunk_input is None:
+                trunk_input = self.fns_xy_nodes_torch
+            trunk_input = trunk_input.to(self.device)          # ((Mx*My), 2)
+            xy  = trunk_input.view(Mx, My, 2)
+            H_xy = self.hard_constraints(xy[..., 0], xy[..., 1])
+            u_pred = u_pred * H_xy
+
+        return {"u_pred": u_pred, "du_pred": None}
+
+    def predict(self, k_x: np.ndarray, f_x: np.ndarray,
+                x_k=None, x_f=None, **kwargs):
+        """
+        k_x: (B, Nx, Ny) or (Nx, Ny)
+        f_x: (B, Mx, My) or (Mx, My)
+        Returns: (B, Mx, My) numpy array
+        """
+        if isinstance(k_x, np.ndarray):
+            k_x = torch.as_tensor(k_x, dtype=torch.float32, device=self.device)
+        if isinstance(f_x, np.ndarray):
+            f_x = torch.as_tensor(f_x, dtype=torch.float32, device=self.device)
+
+        if k_x.dim() == 2: k_x = k_x.unsqueeze(0)
+        if f_x.dim() == 2: f_x = f_x.unsqueeze(0)
+
+        if k_x.dim() != 3 or f_x.dim() != 3:
+            raise ValueError(f"Expected 3D tensors (B, N, N). Got k_x {k_x.shape}, f_x {f_x.shape}")
+        if k_x.shape[0] != f_x.shape[0]:
+            raise ValueError(f"Batch size mismatch: {k_x.shape[0]} vs {f_x.shape[0]}")
+
+        batch_size = f_x.shape[0]
+        k_x, f_x, query_points = self._preprocess_input(k_x, x_k, f_x, x_f, batch_size)
+
+        query_points = torch.as_tensor(
+            query_points.detach().cpu().numpy() if isinstance(query_points, torch.Tensor) else query_points,
+            dtype=torch.float32, device=self.device,
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        batchsize = x.shape[0]
+        self.eval()
+        with torch.no_grad():
+            return self.forward(k_x, f_x, trunk_input=query_points, **kwargs)["u_pred"].cpu().numpy()
 
-        x_ft = torch.fft.rfft(x, dim=-1)
+    def predict_tensor(self, k_x: torch.Tensor, f_x: torch.Tensor,
+                       query_points: torch.Tensor) -> torch.Tensor:
+        """
+        GPU-native inference; all tensors must be on self.device.
+          k_x:          (B, Nx, Ny)        float32
+          f_x:          (B, Mx, My)        float32
+          query_points: ((Mx*My), 2)       float32
+        Returns: (B, Mx, My) on self.device
+        """
+        with torch.no_grad():
+            return self.forward(k_x, f_x, trunk_input=query_points)["u_pred"]
 
-        out_ft = torch.zeros(batchsize, self.out_channels, x.size(-1) // 2 + 1,
-                             device=x.device, dtype=torch.cfloat)
+    def _preprocess_input(self, k_x, x_k, f_x, x_f, batch_size=None):
+        if batch_size is None:
+            batch_size = f_x.shape[0]
 
-        k = min(self.modes, x_ft.shape[-1])
-        out_ft[:, :, :k] = torch.einsum("bik,iok->bok", x_ft[:, :, :k], self.weights[:, :, :k])
+        # k_x: interpolate to model grid if needed
+        if k_x.shape[-2] != self.grid_nx or k_x.shape[-1] != self.grid_ny:
+            from scipy.interpolate import RegularGridInterpolator
+            if isinstance(k_x, torch.Tensor):
+                k_x = k_x.detach().cpu().numpy()
+            if x_k is None:
+                x_k = (np.linspace(0, 1, k_x.shape[-2]),
+                        np.linspace(0, 1, k_x.shape[-1]))
+            XX, YY = np.meshgrid(self.fns_x_nodes_np, self.fns_y_nodes_np, indexing='ij')
+            xy_tgt  = np.stack([XX.ravel(), YY.ravel()], axis=-1)
+            k_list  = []
+            for i in range(batch_size):
+                fn = RegularGridInterpolator(x_k, k_x[i], method='linear')
+                k_list.append(fn(xy_tgt).reshape(self.grid_nx, self.grid_ny))
+            k_x = torch.as_tensor(np.stack(k_list), dtype=torch.float32, device=self.device)
+        else:
+            if isinstance(k_x, torch.Tensor):
+                k_x = k_x.to(dtype=torch.float32, device=self.device)
+            else:
+                k_x = torch.as_tensor(k_x, dtype=torch.float32, device=self.device)
 
-        x = torch.fft.irfft(out_ft, n=x.size(-1))
-        return x
+        # f_x: keep as-is (interior only, size must match model grid)
+        if isinstance(f_x, torch.Tensor):
+            f_x = f_x.to(dtype=torch.float32, device=self.device)
+        else:
+            f_x = torch.as_tensor(f_x, dtype=torch.float32, device=self.device)
 
-
-class FNOMetaLambda1D(nn.Module):
-    """
-        Meta-Network based on FNO。
-    """
-    def __init__(self, act="gelu", hidden=32, modes=16, Lfreq=4):
-        super().__init__()
-        self.act_fn = getActivationFunction(act)
-        self.hidden = hidden
-        self.Lfreq = Lfreq
-
-        # 1. Lifting
-        self.lifting = nn.Conv1d(1, hidden, 1)
-
-        # 2. Fourier Layers
-        self.spec1 = SpectralConv1d(hidden, hidden, modes)
-        self.spec2 = SpectralConv1d(hidden, hidden, modes)
-
-        # 3. Pointwise paths
-        self.w1 = nn.Conv1d(hidden, hidden, 1)
-        self.w2 = nn.Conv1d(hidden, hidden, 1)
-
-        # 4. Frequency Query Head
-        self.query_head = nn.Sequential(
-            nn.Linear(hidden + (2 * Lfreq + 1), hidden),
-            self.act_fn,
-            nn.Linear(hidden, 2)
-        )
-
-    def _get_freq_embedding(self, Lfft: int, device: torch.device) -> torch.Tensor:
-        t = torch.linspace(0.0, 1.0, Lfft, device=device).unsqueeze(-1)
-        feats = [t]
-        for k in range(self.Lfreq):
-            w = (2.0 ** k) * 2.0 * torch.pi
-            feats.append(torch.sin(w * t))
-            feats.append(torch.cos(w * t))
-        return torch.cat(feats, dim=-1)  # [Lfft, 2*Lfreq + 1]
-
-    def forward(self, coef_signal: torch.Tensor, Lfft: int) -> torch.Tensor:
-        B, _, Lc = coef_signal.shape
-
-        # Lifting
-        x = self.lifting(coef_signal)
-
-        # FNO Block 1
-        x1 = self.spec1(x) + self.w1(x)
-        x = self.act_fn(x1)
-
-        # FNO Block 2
-        x2 = self.spec2(x) + self.w2(x)
-        x = self.act_fn(x2)
-
-        # Pooling
-        z = torch.mean(x, dim=-1)  # [B, hidden]
-
-        # phi: [Lfft, 2*Lfreq+1]
-        phi = self._get_freq_embedding(Lfft, coef_signal.device)
-
-        # z_rep: [B, Lfft, hidden], phi_rep: [B, Lfft, F_dim]
-        z_rep = z.unsqueeze(1).expand(-1, Lfft, -1)
-        phi_rep = phi.unsqueeze(0).expand(B, -1, -1)
-
-        query_input = torch.cat([z_rep, phi_rep], dim=-1)
-
-        out = self.query_head(query_input)  # [B, Lfft, 2]
-        w = torch.complex(out[..., 0], out[..., 1])
-
-        # Reshape to [B, 1, Lfft]
-        return w.unsqueeze(1).to(torch.cfloat)
+        x_f = self.fns_xy_nodes_torch   # ((Mx*My), 2)
+        return k_x, f_x, x_f

@@ -6,7 +6,7 @@ from box import Box
 
 from src.problems import create_problem
 from src.utils.fdm_utils import expand_solution
-from src.utils.gen1d_util import generate_x_nodes, function_generators
+from src.utils.gen1d_util import generate_x_nodes_1d, function_generators_1d
 
 # import matplotlib.pyplot as plt
 # from scipy.integrate import solve_bvp
@@ -26,11 +26,11 @@ class DataGenerator1d:
 
         self.dataset = None
         self.eps = config.data.get("eps", 1.0)
-        self.x_nodes = generate_x_nodes(config.data.mesh.grid_type, config.data.mesh.grid_num)
+        self.x_nodes = generate_x_nodes_1d(config.data.mesh.grid_type, config.data.mesh.grid_num)
 
         if self.problem not in ["poisson", "diffusion", "helmholtz", "convdiff"]:
             raise NotImplementedError(f"{self.problem} problem is not supported")
-        self.u_generator = create_problem(self.problem)
+        self.u_generator = create_problem(self.problem, self.n_dim)
 
         # for helmholtz equations, ill-conditioned system matrices need to be filtered
         if self.problem == "helmholtz":
@@ -57,7 +57,7 @@ class DataGenerator1d:
         gen_cfg = getattr(self.config.data, func_name)
         gen_name = getattr(gen_cfg, "generator").lower()
         gen_setting = getattr(gen_cfg, gen_name + "_setting")
-        return function_generators[gen_name](self.x_nodes, self.redundant_func_num, **gen_setting)
+        return function_generators_1d[gen_name](self.x_nodes, self.redundant_func_num, **gen_setting)
 
     def generate_data(self, force_gen=False, seed=None):
         if os.path.exists(self.config['dataset_path']) and not force_gen:
@@ -156,14 +156,14 @@ class DataGenerator1d:
         if k_data.ndim == 1:
             k_data = k_data[None, :]
 
-        method, problem == method.lower(), problem.lower()
+        method, problem = method.lower(), problem.lower()
         func_num, points_num = f_data.shape[0], f_data.shape[1]
         if func_num != k_data.shape[0] or len(x_data) != points_num:
             raise ValueError("The number of parameter functions kx and rhs functions fx is not compatible")
 
         if problem not in ["poisson", "diffusion", "helmholtz", "convdiff"]:
             raise NotImplementedError(f"{problem} problem is not supported")
-        pde_solver = create_problem(problem)
+        pde_solver = create_problem(problem, n_dim=1)
 
         u = np.zeros(shape=(func_num, points_num))                           # (n,)
         du = np.zeros(shape=(func_num, points_num))                          # (n,)
@@ -191,7 +191,7 @@ class TestDataGenerator(DataGenerator1d):
 
         self.problem = config.problem.type.lower()
         self.solver = config.problem.method.lower()
-        self.u_generator = create_problem(self.problem)
+        self.u_generator = create_problem(self.problem, n_dim=1)
 
         self.dataset = None
         self.eps = self.testing_cfg.get("eps", 1.0)
@@ -212,7 +212,7 @@ class TestDataGenerator(DataGenerator1d):
 
         self.grid_num = self.testing_cfg.mesh.grid_num
         self.grid_type = self.testing_cfg.mesh.grid_type
-        self.x_nodes = generate_x_nodes(self.grid_type, self.grid_num)
+        self.x_nodes = generate_x_nodes_1d(self.grid_type, self.grid_num)
 
     def __generate_k_base(self):
         """
@@ -223,7 +223,7 @@ class TestDataGenerator(DataGenerator1d):
         gen_setting = getattr(gen_cfg, gen_name+"_setting")
 
         # return: [B, N]
-        return function_generators[gen_name](x_nodes = self.x_nodes, func_num = self.redundant_func_num, **gen_setting)
+        return function_generators_1d[gen_name](x_nodes = self.x_nodes, func_num = self.redundant_func_num, **gen_setting)
 
     def generate_data(self, force_gen = False, seed = None):
         if seed is not None:
@@ -243,7 +243,7 @@ class TestDataGenerator(DataGenerator1d):
             if rtype in ["fixed", "gaussian", "grf"]:
                 f_cfg = self.testing_cfg.f_x
                 f_setting = getattr(f_cfg, rtype + "_setting", {})
-                f_batch = function_generators[rtype](self.x_nodes, self.redundant_func_num, **f_setting)
+                f_batch = function_generators_1d[rtype](self.x_nodes, self.redundant_func_num, **f_setting)
 
                 for idx in tqdm(range(self.redundant_func_num), desc=f"Solve {rtype}"):
                     k_curr = k_base[idx]

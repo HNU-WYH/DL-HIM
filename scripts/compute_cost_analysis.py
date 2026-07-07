@@ -32,7 +32,7 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 # =============================================================================
 # Configuration
 # =============================================================================
-CONFIG_WILDCARD = "diffusion*"
+CONFIG_WILDCARD = "diffusion1d*"
 TEST_GRID_NUM: Optional[int] = 801
 TEST_DATASET_PATH: Optional[str] = None
 SAMPLE_INDICES: Optional[Sequence[int]] = None
@@ -40,12 +40,10 @@ MAX_ITER: Optional[int] = 4000
 TOL: Optional[float] = 1e-6  # early-stop threshold for all cases
 
 MODEL_PATHS: Dict[str, Optional[str]] = {
-    "Default": "./checkpoints/fns_diffusion1d_fno/dynamic_error_l2/diffusion_1D_Grid31_Ep101_2026-04-17.pt",
-    # "Default": "./checkpoints/deeponet_diffusion1d/dynamic_residual_l2/diffusion_1D_Grid31_Ep20000_2026-01-26.pt",
-    # "Default": "checkpoints/deeponet_helmholtz1d/dynamic_residual_l2/helmholtz_1D_Grid31_Ep20000_2026-01-26.pt",
+    "Default": "checkpoints/fns_diffusion1d_fno/dynamic_error_l2/diffusion_1D_Grid31_ep100.pt",
 }
 
-BASELINE: str = "HINTS-Fixed (Jacobi)"                                             # label of the speedup reference case
+BASELINE: str = "HINTS-Fixed (Jacobi)"                               # label of the speedup reference case
 OUTPUT_PATH: Optional[str] = "results/diffusion_cost.pdf"            # e.g. "results/diffusion_cost.pdf"; None → show
 SAVE_TABLE_PATH: Optional[str] = "results/diffusion_speedup.md"      # e.g. "results/diffusion_speedup.md"; None → skip
 

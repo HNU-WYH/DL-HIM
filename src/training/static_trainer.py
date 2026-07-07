@@ -68,8 +68,9 @@ class StaticTrainer:
         )
 
     def load_dataset(self, dataset):
-        # load coordinates of x
         self.x_nodes = torch.tensor(dataset["x_data"], dtype=torch.float32, device=self.device)
+        if "y_data" in dataset:
+            self.y_nodes = torch.tensor(dataset["y_data"], dtype=torch.float32, device=self.device)
 
         self.k_train = torch.tensor(dataset["k_data_train"], dtype=torch.float32, device=self.device)
         self.f_train = torch.tensor(dataset["f_data_train"], dtype=torch.float32, device=self.device)
@@ -79,20 +80,19 @@ class StaticTrainer:
         self.f_val = torch.tensor(dataset["f_data_val"], dtype=torch.float32, device=self.device)
         self.u_val = torch.tensor(dataset["u_data_val"], dtype=torch.float32, device=self.device)
 
-        # Update k_mean and k_sigma
         k_mean_val = torch.as_tensor(dataset["k_mean"], device=self.device, dtype=torch.float32)
-        k_std_val = torch.as_tensor(dataset["k_std"], device=self.device, dtype=torch.float32)
+        k_std_val  = torch.as_tensor(dataset["k_std"],  device=self.device, dtype=torch.float32)
         self.model.k_mean.fill_(k_mean_val.item())
         self.model.k_sigma.fill_(k_std_val.item())
 
         if self.need_A:
             self.a_mats_train = torch.tensor(dataset["a_mats_train"], dtype=torch.float32, device=self.device)
-            self.a_mats_val = torch.tensor(dataset["a_mats_val"], dtype=torch.float32, device=self.device)
+            self.a_mats_val   = torch.tensor(dataset["a_mats_val"],   dtype=torch.float32, device=self.device)
         else:
             self.a_mats_train, self.a_mats_val = None, None
 
         if self.need_du_true:
-            self.du_val = torch.tensor(dataset["du_data_val"], dtype=torch.float32, device=self.device)
+            self.du_val   = torch.tensor(dataset["du_data_val"],   dtype=torch.float32, device=self.device)
             self.du_train = torch.tensor(dataset["du_data_train"], dtype=torch.float32, device=self.device)
         else:
             self.du_train, self.du_val = None, None
@@ -252,6 +252,8 @@ class StaticTrainer:
             return
 
         if (epoch % self.plot_interval == 0) or (epoch == self.epochs - 1):
+            if self.u_val.ndim > 2:  # 2D: no 1D plot routine available yet
+                return
             val_pred = val_pred.detach().cpu().numpy()
             plot_test_samples(epoch_index=epoch + 1,
                               x_nodes=self.x_nodes[1:-1],
@@ -311,17 +313,12 @@ class StaticTrainer:
         return f_batch - torch.einsum("bnm,bm->bn", a_mats, u_pred)
 
     def _grad_fd(self, func: torch.Tensor, x_nodes: Optional[torch.Tensor] = None) -> torch.Tensor:
-        """
-        Central difference gradient using torch.gradient support batches.
-        params:
-         func: [B, N-2]
-         x_nodes: [N-2,] (interior nodes)
-        """
+        if func.ndim > 2:
+            raise NotImplementedError("H1 norm is not supported for 2D. Use loss.norm: l2 or l1.")
         if x_nodes is not None:
             x_nodes = torch.as_tensor(x_nodes, dtype=func.dtype, device=self.device)
         else:
             x_nodes = self.x_nodes[1:-1]
-
         return torch.gradient(input=func, spacing=(x_nodes,), dim=1)[0]
 
     def _relative_error(self, u_pred: torch.Tensor, u_true: torch.Tensor, ord_val: int = 2):
@@ -332,16 +329,20 @@ class StaticTrainer:
                 return torch.nn.functional.mse_loss(u_pred, u_true)
             else:
                 raise ValueError("only l1 and l2 norm are supported")
-
         else:
+            # 2D: flatten spatial dims into one vector before computing norm
+            if u_pred.ndim > 2:
+                u_pred = u_pred.flatten(1)
+                u_true = u_true.flatten(1)
             if ord_val == 1:
                 diff_norm = torch.linalg.vector_norm(u_pred - u_true, ord=1, dim=-1)
-                ref_norm = torch.linalg.vector_norm(u_true, ord=1, dim=-1)
-                return torch.mean(diff_norm / torch.clamp(ref_norm, min=self.relative_eps))
+                ref_norm  = torch.linalg.vector_norm(u_true, ord=1, dim=-1)
             elif ord_val == 2:
                 diff_norm = torch.linalg.vector_norm(u_pred - u_true, ord=2, dim=-1)
-                ref_norm = torch.linalg.vector_norm(u_true, ord=2, dim=-1)
-                return torch.mean(diff_norm / torch.clamp(ref_norm, min=self.relative_eps))
+                ref_norm  = torch.linalg.vector_norm(u_true, ord=2, dim=-1)
+            else:
+                raise ValueError("only l1 and l2 norm are supported")
+            return torch.mean(diff_norm / torch.clamp(ref_norm, min=self.relative_eps))
 
     def _relative_residual(self, res_seq: torch.Tensor, ord_val: int = 2,
                            f_true: Optional[torch.Tensor] = None) -> torch.Tensor:
@@ -353,15 +354,19 @@ class StaticTrainer:
         else:
             if f_true is None:
                 raise ValueError("f_true is required for relative residual loss.")
-
+            # 2D: flatten spatial dims into one vector before computing norm
+            if res_seq.ndim > 2:
+                res_seq = res_seq.flatten(1)
+                f_true  = f_true.flatten(1)
             if ord_val == 1:
                 res_norm = torch.linalg.vector_norm(res_seq, ord=1, dim=-1)
-                f_norm = torch.linalg.vector_norm(f_true, ord=1, dim=-1)
-                return torch.mean(res_norm / torch.clamp(f_norm, min=self.relative_eps))
+                f_norm   = torch.linalg.vector_norm(f_true,  ord=1, dim=-1)
             elif ord_val == 2:
                 res_norm = torch.linalg.vector_norm(res_seq, ord=2, dim=-1)
-                f_norm = torch.linalg.vector_norm(f_true, ord=2, dim=-1)
-                return torch.mean(res_norm / torch.clamp(f_norm, min=self.relative_eps))
+                f_norm   = torch.linalg.vector_norm(f_true,  ord=2, dim=-1)
+            else:
+                raise ValueError("only l1 and l2 norm are supported")
+            return torch.mean(res_norm / torch.clamp(f_norm, min=self.relative_eps))
 
     def reset_memory(self):
         """

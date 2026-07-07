@@ -1,24 +1,27 @@
 import numpy as np
-import warnings
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
 
+# =============================================================================
+# 1-D FDM Utilities
+# =============================================================================
+
 def build_diffusion_matrix_1d(x, k_x, mat_type="sparse"):
     """
-    Build the FDM matrix of a diffusion operator -d(d k(x) u(x)).
-    The matrix includes boundary rows/cols.
+    Build the FDM matrix of a diffusion operator -d(d k(x) u(x)), including boundary rows/cols.
+    For each inner grid point i, we have
 
-    for each inner grid point i, we have
-    -d(d k(i) u(i)) = (F_{i+1/2} - F_{i-1/2}) / (x_{i+1/2} - x_{i-1/2)
+        -d( k(i) d u(i)) = (F_{i+1/2} - F_{i-1/2}) / (x_{i+1/2} - x_{i-1/2)
+
     where:
         - F_{i+1/2} = k_{i+1/2}(u_{i+1}-u_i)/(x_{i+1}-x_i)
         - F_{i-1/2} = k_{i-1/2}(u_i-u_{i-1})/(x_i-x_{i-1})
         - k_{i+1/2} = (k_{i}+k_{i+1})/2
         - k_{i-1/2} = (k_{i}+k_{i-1})/2
     Args:
-        x: (n,)
-        k_x: (n,) or (1,) or (n-1,)
+        x: (n,); coordinates
+        k_x: scalar, (n,) or (n-1,); parameter function
         mat_type: "sparse" or "dense"
 
     Returns:
@@ -29,10 +32,7 @@ def build_diffusion_matrix_1d(x, k_x, mat_type="sparse"):
         k_x = np.ones(n - 1) * k_x
     elif len(k_x) == n:
         k_x = 0.5 * (k_x[:-1] + k_x[1:])
-        # warnings.warn("convert k_x from (n,) to (n-1,)")
-    elif len(k_x) == n - 1:
-        pass
-    else:
+    elif len(k_x) != n - 1:
         raise ValueError("k_x must be scalar, or have length len(x) or len(x)-1")
 
     if mat_type.lower() == "sparse":
@@ -42,8 +42,7 @@ def build_diffusion_matrix_1d(x, k_x, mat_type="sparse"):
 
     # whether the mesh is uniformly spaced
     h = np.diff(x)  # (n-1,)
-    uniform = np.allclose(h, h[0])
-    if uniform:
+    if np.allclose(h, h[0]):
         h = h[0]
         for i in range(1, n - 1):
             Ap[i, i - 1] = -k_x[i - 1] / h ** 2
@@ -52,9 +51,10 @@ def build_diffusion_matrix_1d(x, k_x, mat_type="sparse"):
 
     else:
         for i in range(1, n - 1):
-            # (0) & (n-1) is the boundary
+            # Leftmost (0) & Rightmost (n-1) is the boundary
             h_mean = 0.5 * (h[i - 1] + h[i])
 
+            # 3-point stencil
             c_left = k_x[i - 1] / (h_mean * h[i - 1])
             c_right = k_x[i] / (h_mean * h[i])
 
@@ -65,29 +65,27 @@ def build_diffusion_matrix_1d(x, k_x, mat_type="sparse"):
     return Ap
 
 
-def build_convection_matrix_1d(x, b_x, mat_type="sparse"):
+def build_convection_matrix_1d(x, k_x, mat_type="sparse"):
     """
-        Build the FDM matrix of a convection-diffusion operator b(x)·du(x).
+        Build the FDM matrix of a convection-diffusion operator k(x)·du(x).
         The matrix includes boundary rows/cols.
 
         using the upwind form, we have:
-        - if b(i)>0,  b(i)·du(x) =b[i] * (u[i] - u[i-1])/(x[i] - x[i-1])
-        - if b(i)<0,  b(i)·du(x) =b[i] * (u[i+1] - u[i])/(x[i+1] - x[i])
+        - if k(i)>0,  k(i)·du(x) =k[i] * (u[i] - u[i-1])/(x[i] - x[i-1])
+        - if k(i)<0,  k(i)·du(x) =k[i] * (u[i+1] - u[i])/(x[i+1] - x[i])
 
         Args:
             x: (n,)
-            b_x: (n,)
+            k_x: scalar or (n,)
             mat_type: "sparse" or "dense"
 
         Returns:
             A (n, n)
     """
     n = len(x)
-    if np.isscalar(b_x) or len(b_x) == 1:
-        b_x = np.ones(n) * b_x
-    elif n == len(b_x):
-        pass
-    else:
+    if np.isscalar(k_x) or len(k_x) == 1:
+        k_x = np.ones(n) * k_x
+    elif n != len(k_x):
         raise ValueError("b_x must be scalar, or have length len(x)")
 
     if mat_type.lower() == "sparse":
@@ -99,20 +97,20 @@ def build_convection_matrix_1d(x, b_x, mat_type="sparse"):
     if np.allclose(h, h[0]):
         h = h[0]
         for i in range(1, n - 1):
-            if b_x[i] >= 0:
-                Ap[i, i] += b_x[i] / h
-                Ap[i, i - 1] += -b_x[i] / h
+            if k_x[i] >= 0:
+                Ap[i, i] += k_x[i] / h
+                Ap[i, i - 1] += -k_x[i] / h
             else:
-                Ap[i, i + 1] += b_x[i] / h
-                Ap[i, i] += -b_x[i] / h
+                Ap[i, i + 1] += k_x[i] / h
+                Ap[i, i] += -k_x[i] / h
     else:
         for i in range(1, n - 1):
-            if b_x[i] >= 0:
-                Ap[i, i] += b_x[i] / h[i - 1]
-                Ap[i, i - 1] += -b_x[i] / h[i - 1]
+            if k_x[i] >= 0:
+                Ap[i, i] += k_x[i] / h[i - 1]
+                Ap[i, i - 1] += -k_x[i] / h[i - 1]
             else:
-                Ap[i, i + 1] += b_x[i] / h[i]
-                Ap[i, i] += -b_x[i] / h[i]
+                Ap[i, i + 1] += k_x[i] / h[i]
+                Ap[i, i] += -k_x[i] / h[i]
 
     return Ap
 
@@ -121,19 +119,18 @@ def build_reaction_matrix_1d(x, k_x, mat_type="sparse"):
     """
     build the diagonal matrix for zero-order term k(x)^2 u(x)
     Args:
-        x:
-        k_x:
-        mat_type:
+        x: (n,)
+        k_x: scalar or (n,)
+        mat_type: "sparse" or "dense"
 
     Returns:
+        A (n, n)
 
     """
     n = len(x)
     if np.isscalar(k_x) or len(k_x) == 1:
         k_x = np.ones(n) * k_x
-    elif n == len(k_x):
-        pass
-    else:
+    elif n != len(k_x):
         raise ValueError("k_x must be scalar, or have length len(x)")
 
     if mat_type.lower() == "sparse":
@@ -195,22 +192,22 @@ def direct_solve(A, b, mat_type="sparse"):
 def apply_dirichlet_bc_1d(A, f, u_left=0.0, u_right=0.0, mat_type="sparse"):
     """
     Applying dirichlet boundary conditions on the matrix A and the right-hand side f
-    with u(0) = u_left, u(1) = u_right
-    return the revised (A, f) and the inner slice and boundary indices
+    with u(0) = u_left, u(1) = u_right,
 
-    equivalent to define a lifting vector u_bc = [u_left, 0, ..., 0, u_right]
-    the inhomogeneous solution u = u_0 + u_bc
-    where u[inner] = u_0[inner], u[boundary] = u_bc[boundary]
+        [ A_ii,  A_ib ]    [ u_inner]   [ f_inner ]
+        [ A_bi,  A_bb ]  · [  u_bc  ] = [   f_bc  ]
+
+    Then we have:  A_ii @ u_inner = f_full - A_ib @ u_bc
 
     Args:
-        A:
-        f:
-        u_left:
-        u_right:
-        mat_type:
+        A:        (n, n)
+        f:        (n, )
+        u_left:   scalar
+        u_right:  scalar
+        mat_type: "sparse" or "dense"
 
     Returns:
-
+        the revised (A, f) and the inner slice and boundary indices
     """
     n = A.shape[0]
     inner = slice(1, -1)
@@ -235,10 +232,183 @@ def apply_dirichlet_bc_1d(A, f, u_left=0.0, u_right=0.0, mat_type="sparse"):
 
 
 def expand_solution(u_inner, u_left=0.0, u_right=0.0):
+    """
+    expand the solution with given boundary values
+    """
     n = len(u_inner) + 2
     u_expand = np.zeros(n)
 
     u_expand[1:-1] = u_inner
     u_expand[0], u_expand[-1] = u_left, u_right
+    return u_expand
+
+
+# =============================================================================
+# 2-D FDM Utilities
+# =============================================================================
+
+def build_diffusion_matrix_2d(x, y, k_xy, mat_type="sparse"):
+    """
+    Build the FDM matrix for the 2D diffusion operator -∇·(k·∇u) via a 5-point stencil.
+    Boundary rows/cols are included in the generated matrix, which are left as zeros.
+    Node ordering: row-major, idx = i * Ny + j.
+
+    The PDE is split into x and y directions:
+        -∇·(k ∇u) = - [∂/∂x(k ∂u/∂x) + ∂/∂y(k ∂u/∂y)] = 0
+
+    For a grid point (i, j), we have :
+        -∇·(k·∇u)_{i,j} = - [ (F_{i+1/2, j} - F_{i-1/2, j}) / Δx_{i±1/2}
+                             + (G_{i, j+1/2} - G_{i, j-1/2}) / Δy_{j±1/2} ]
+        Where:
+            1. F_{i+1/2, j} = k_{i+1/2, j} * (u_{i+1, j} - u_{i, j}) / (x_{i+1} - x_i)
+            2. F_{i-1/2, j} = k_{i-1/2, j} * (u_{i, j} - u_{i-1, j}) / (x_i - x_{i-1})
+            3. Δx_{i±1/2}   = x_{i+1/2} - x_{i-1/2} = (x_{i+1} - x_{i-1}) / 2
+            4. G_{i, j+1/2} = k_{i, j+1/2} * (u_{i, j+1} - u_{i, j}) / (y_{j+1} - y_j)
+            5. G_{i, j-1/2} = k_{i, j-1/2} * (u_{i, j} - u_{i, j-1}) / (y_j - y_{j-1})
+            6. Δy_{j±1/2}   = y_{j+1/2} - y_{j-1/2} = (y_{j+1} - y_{j-1}) / 2
+
+    Which yields the following 5-point stencil weights for node (i, j):
+
+                 [       0                -C_{i, j+1}              0       ]
+       Stencil = [  -C_{i-1, j}             C_{i, j}          -C_{i+1, j}  ]
+                 [       0                -C_{i, j-1}              0       ]
+
+       Where the coefficients (C) extracted from the fluxes are:
+            - C_{i+1, j} = k_{i+1/2, j} / [ (x_{i+1} - x_i) * Δx_{i±1/2} ]  (Right)
+            - C_{i-1, j} = k_{i-1/2, j} / [ (x_i - x_{i-1}) * Δx_{i±1/2} ]  (Left)
+            - C_{i, j+1} = k_{i, j+1/2} / [ (y_{j+1} - y_j) * Δy_{j±1/2} ]  (Top)
+            - C_{i, j-1} = k_{i, j-1/2} / [ (y_j - y_{j-1}) * Δy_{j±1/2} ]  (Bottom)
+            - C_{i, j}   = C_{i+1, j} + C_{i-1, j} + C_{i, j+1} + C_{i, j-1} (Center)
+
+    Args:
+        x: (Nx,) the nodes of x
+        y: (Ny,) the nodes of y
+        k_xy: (Nx, Ny) values of k(x,y)
+        mat_type: "sparse" or "dense"
+
+    Returns:
+        A: (Nx*Ny, Nx*Ny)
+    """
+    # Initialization
+    Nx, Ny = len(x), len(y)
+
+    N = Nx * Ny
+    if mat_type.lower() == "sparse":
+        A = sp.lil_matrix((N, N))
+    else:
+        A = np.zeros((N, N))
+
+
+    # compute the grid size
+    dx = np.diff(x)
+    dy = np.diff(y)
+    dx_uniform = np.allclose(dx, dx[0])
+    dy_uniform = np.allclose(dy, dy[0])
+    hx = dx[0] if dx_uniform else dx
+    hy = dy[0] if dy_uniform else dy
+
+    # compute the coefficient function
+    k = np.asarray(k_xy)
+    if k.shape != (Nx, Ny):
+        raise ValueError(f"k_xy shape {k.shape} does not match grid ({Nx}, {Ny})")
+
+    # Half-point k values
+    k_ip = 0.5 * (k[:-1, :] + k[1:, :])   # (Nx-1, Ny), x-direction interfaces
+    k_jp = 0.5 * (k[:, :-1] + k[:, 1:])   # (Nx, Ny-1), y-direction interfaces
+
+    # Apply the five point stencil
+    for i in range(1, Nx - 1):
+        for j in range(1, Ny - 1):
+            idx = i * Ny + j
+            if dx_uniform and dy_uniform:
+                cx_plus  = k_ip[i, j] / (hx ** 2)
+                cx_minus = k_ip[i - 1, j] / (hx ** 2)
+                cy_plus  = k_jp[i, j] / (hy ** 2)
+                cy_minus = k_jp[i, j - 1] / (hy ** 2)
+            else:
+                hx_mean  = 0.5 * (hx[i - 1] + hx[i])
+                hy_mean  = 0.5 * (hy[j - 1] + hy[j])
+                cx_plus  = k_ip[i, j] / (hx_mean * hx[i])
+                cx_minus = k_ip[i - 1, j] / (hx_mean * hx[i - 1])
+                cy_plus  = k_jp[i, j] / (hy_mean * hy[j])
+                cy_minus = k_jp[i, j - 1] / (hy_mean * hy[j - 1])
+
+            A[idx, idx] = cx_plus + cx_minus + cy_plus + cy_minus
+            A[idx, (i + 1) * Ny + j] = -cx_plus
+            A[idx, (i - 1) * Ny + j] = -cx_minus
+            A[idx, i * Ny + (j + 1)] = -cy_plus
+            A[idx, i * Ny + (j - 1)] = -cy_minus
+
+    return A
+
+
+def apply_dirichlet_bc_2d(A, f, mat_type="sparse", shape=None):
+    """
+    Apply homogeneous Dirichlet BC on all four sides.
+
+    Args:
+        A: (Nx*Ny, Nx*Ny) the full size matrix
+        f: (Nx*Ny,) the full size rhs vector
+        mat_type: "sparse" or "dense"
+        shape: (Nx, Ny). If None, will try to infer from sqrt(N).
+
+    Returns:
+        A_ii, f_inner, inner_idx, bc_idx
+    """
+    # Shape set-up
+    N = A.shape[0]
+    if shape is None:
+        Ny = int(round(np.sqrt(N)))
+        Nx = N // Ny
+        if Nx * Ny != N:
+            raise ValueError("Cannot infer 2D grid shape from flat length. Please pass shape=(Nx, Ny).")
+    else:
+        Nx, Ny = shape
+
+    # set the indices of boundary and inner grid points
+    f = np.asarray(f).copy()
+    inner_idx = [i * Ny + j for i in range(1, Nx - 1) for j in range(1, Ny - 1)]
+    bc_idx = [idx for idx in range(N) if idx not in inner_idx]
+
+    # set the reduced matrix A_ii
+    if mat_type.lower() == "sparse":
+        A_csr = A.tocsr()
+        A_ii = A_csr[inner_idx, :][:, inner_idx]
+        # A_ib = A_csr[inner_idx, :][:, bc_idx]
+    else:
+        A_ii = A[np.ix_(inner_idx, inner_idx)]
+        # A_ib = A[np.ix_(inner_idx, bc_idx)]
+
+    # Homogeneous BC: u_bc = 0
+    # f_inner = f[inner] - A_ib @ 0 = f[inner]
+    f_inner = f[inner_idx]
+    return A_ii, f_inner, inner_idx, bc_idx
+
+
+def solve_dirichlet_system_2d(A, f, mat_type="sparse", shape=None):
+    """
+    Convenience wrapper: build + apply_bc + direct_solve.
+    """
+    A_ii, f_inner, inner_idx, bc_idx = apply_dirichlet_bc_2d(A, f, mat_type=mat_type, shape=shape)
+    u_inner = direct_solve(A_ii, f_inner, mat_type=mat_type)
+    return u_inner, A_ii, f_inner, inner_idx, bc_idx
+
+
+def expand_solution_2d(u_inner, Nx, Ny):
+    """
+    Expand interior solution back to full (Nx, Ny) grid with zero boundaries.
+
+    Args:
+        u_inner: ((Nx-2)*(Ny-2),) or (Nx-2, Ny-2)
+        Nx, Ny: full grid sizes
+
+    Returns:
+        u_expand: (Nx, Ny)
+    """
+    u_expand = np.zeros((Nx, Ny))
+    u_arr = np.asarray(u_inner)
+    if u_arr.ndim == 1:
+        u_arr = u_arr.reshape(Nx - 2, Ny - 2)
+    u_expand[1:-1, 1:-1] = u_arr
     return u_expand
 

@@ -6,7 +6,7 @@ from box import Box
 from torch import nn
 
 from .base import NeuralOperatorBase
-from src.utils.gen1d_util import generate_x_nodes
+from src.utils.gen1d_util import generate_x_nodes_1d
 
 
 class DeepONet1d(NeuralOperatorBase):
@@ -15,7 +15,7 @@ class DeepONet1d(NeuralOperatorBase):
 
         # Get grid properties and function dimensions
         self.don_num_x_nodes = config.data.mesh.grid_num
-        self.don_x_nodes_np = generate_x_nodes(config.data.mesh.grid_type, self.don_num_x_nodes)
+        self.don_x_nodes_np = generate_x_nodes_1d(config.data.mesh.grid_type, self.don_num_x_nodes)
         self.register_buffer("don_x_nodes_torch", torch.tensor(self.don_x_nodes_np[1:-1, None], dtype=torch.float32))
 
         # define a hard constraint H(x) = x * (x - 1.0)
