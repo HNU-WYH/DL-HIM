@@ -4,5 +4,5 @@
 *.DS_store
 
 /%deprecated/
-/experiment
+/%experiment
 /.idea
