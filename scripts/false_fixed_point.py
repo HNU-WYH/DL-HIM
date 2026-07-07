@@ -8,18 +8,17 @@ from src.solver.hybrid_solver import HybridSolver
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 
-# =====================
+# ============================
 # Configuration
-# =====================
-CONFIG_WILDCARD = "diffusion*"
+# ============================
+CONFIG_WILDCARD = "diffusion1d*"
 
 MODEL_TYPE = "DeepONet"
-MODEL_PATH = "checkpoints/deeponet_diffusion1d/static_error_l2/diffusion_1D_Grid31_Ep20000_2026-01-25.pt"
+MODEL_PATH = "checkpoints/deeponet_diffusion1d/static_error_l2/diffusion_1D_Grid31_ep20000.pt"
 
-TEST_GRID_NUM = 801  #
 SAMPLE_INDEX = 8
+TEST_GRID_NUM = 801
 MAX_ITER_CYCLES = 36
-
 
 def run_analysis():
     cfg = load_config(CONFIG_WILDCARD)

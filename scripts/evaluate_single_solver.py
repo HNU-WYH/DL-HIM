@@ -35,8 +35,6 @@ TOL: Optional[float] = None
 OUTPUT_PATH: Optional[str] = None                        # e.g. "results/diffusion_iter.pdf"; None → show
 
 MODEL_PATHS: Dict[str, Optional[str]] = {
-    # "Default": "./checkpoints/fns_diffusion1d/static_error_l2/diffusion_1D_Grid31_ep100.pt",
-    # "Default": "./checkpoints/deeponet_diffusion1d/dynamic_residual_l2/diffusion_1D_Grid31_Ep20000_2026-01-26.pt",
     "Default": "checkpoints/deeponet_helmholtz1d/static_residual_l2/helmholtz_1D_Grid31_ep20000.pt",
 }
 

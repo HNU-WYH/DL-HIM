@@ -10,6 +10,7 @@ import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+
 from box import Box
 from tqdm import tqdm
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple

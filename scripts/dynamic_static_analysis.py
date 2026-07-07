@@ -37,7 +37,7 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 # =============================================================================
 # Configuration
 # =============================================================================
-CONFIG_WILDCARD = "diffusion*"
+CONFIG_WILDCARD = "diffusion1d*"
 TEST_GRID_NUM: Optional[int] = 601          # grid used during evaluation
 TEST_DATASET_PATH: Optional[str] = None
 SAMPLE_INDICES: Optional[Sequence[int]] = None
@@ -48,40 +48,32 @@ TOL: Optional[float] = 1e-8
 # Override per-case if needed by adding the same key inside the case dict.
 SHARED_SOLVER = dict(
     mode             = "hybrid",
+    operator         = "deeponet",
     numerical_method = "jacobi",
     relaxation_factor= 0.66,
     hybrid_ratio     = 20,
-    neural_update    = "paaa",   # "fixed" | "aa" | "paaa"
+    neural_update    = "paaa",
     aa_m             = 10,
 )
 
-# --- Model checkpoints -------------------------------------------------------
-# Keys are referenced by CASES["model"]. Fill in the actual .pt paths.
+
+# --- Model checkpoints & Cases -------------------------------------------------------
+# ckpt path for models, should be compatible with the model type
 MODEL_PATHS: Dict[str, str] = {
-    # Static checkpoints
     "static": "./checkpoints/deeponet_diffusion1d/static_residual_l2/diffusion_1D_Grid31_ep20000.pt",
-    # "static": "./checkpoints/fns_diffusion1d_fno/static_error_l2/diffusion_1D_Grid31_ep100.pt",
-
-
-    # Dynamic checkpoint (curriculum K=1→10, same epoch budget as static)
     "dynamic": "./checkpoints/deeponet_diffusion1d/dynamic_residual_l2/diffusion_1D_Grid31_ep20000.pt",
-    # "dynamic": "./checkpoints/fns_diffusion1d_fno/dynamic_error_l2/diffusion_1D_Grid31_ep100.pt",
-
 }
 
-# --- Cases -------------------------------------------------------------------
-# Each entry = one curve on the plot.
-# group / color / linestyle are purely for plotting; all other keys go to the solver.
+# test cases
 CASES: List[Dict] = [
-    # ── Static ──────────────────────────────────────────────────────────────
     {"label": "Static",  "model": "static", "group": "static",  "color": "black", "linestyle": "--"},
-    # ── Dynamic (curriculum K=1→10) ─────────────────────────────────────────
     {"label": "Dynamic (K=10)", "model": "dynamic", "group": "dynamic", "color": "C0", "linestyle": "-"},
 ]
 
 BASELINE: str = "Static"   # label of the speedup reference case
 OUTPUT_PATH: Optional[str] = "results/dynamic_static_analysis.pdf"
 SAVE_TABLE_PATH: Optional[str] = "results/dynamic_static_speedup.md"
+
 
 # =============================================================================
 # Time-to-solution thresholds
@@ -155,6 +147,8 @@ def apply_case_overrides(base_cfg: Box, case: Dict, tol=TOL, max_iter=MAX_ITER) 
     if max_iter is not None:
         cfg.problem.max_iter = max_iter
 
+    if (v := merged.get("operator")) is not None:
+        cfg.training.operator_type = v
     if (v := merged.get("numerical_method")) is not None:
         cfg.solver.numerical["method"] = v
     if (v := merged.get("relaxation_factor")) is not None:

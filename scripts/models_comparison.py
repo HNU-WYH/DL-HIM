@@ -15,10 +15,7 @@ from scripts.evaluate_single_solver import evaluate_case_on_sample, load_evaluat
 
 # In[]:
 CONFIG_WILDCARD = "diffusion1d*"
-# CONFIG_WILDCARD = "helmholtz1d*"
-# CHECKPOINT_ROOT = "checkpoints/fns_diffusion1d/"
-CHECKPOINT_ROOT = "checkpoints/deeponet_diffusion1d"
-# CHECKPOINT_ROOT = "checkpoints/deeponet_helmholtz1d"
+CHECKPOINT_ROOT = "checkpoints/fns_diffusion1d_fno"
 
 TEST_GRID_NUM: Optional[int] = 201                    # if not equal, interpolate to uniformly spaced TEST_GRID_NUM
 TEST_DATASET_PATH: Optional[str] = None                # path to .npz test dataset; None -> derive from the dataset path

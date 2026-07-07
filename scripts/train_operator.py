@@ -152,9 +152,9 @@ def train_operator(config_wildcard=CONFIG_WILDCARD,
     # ==============================================================
 
 
-def batch_train(trainer_types=("static",),    # "dynamic", ),
-                loss_types=("error", ),
-                loss_norms=("l2", ),
+def batch_train(trainer_types=("static", "dynamic", ),
+                loss_types=("error", "residual"),
+                loss_norms=("l2", "l1", "h1"),
                 config_wildcard=CONFIG_WILDCARD,
                 dataset_path=DATASET_PATH,
                 save_after_train=SAVE_AFTER_TRAIN,
